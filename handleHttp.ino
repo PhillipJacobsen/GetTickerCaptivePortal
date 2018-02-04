@@ -22,6 +22,10 @@ void handleRoot() {
     "</body></html>"
     "<p><a href='/ticker'>Configure Ticker Settings</a></p>"
     "</body></html>"
+    "<p><a href='/balance'>Configure Address Monitoring</a></p>"
+    "</body></html>"
+    "<p><a href='/update'>Firmware Updater</a></p>"
+    "</body></html>"
   );
   server.client().stop(); // Stop is needed because we sent no content length
 }
@@ -118,6 +122,77 @@ void handleTicker() {
   server.client().stop(); // Stop is needed because we sent no content length
 }
 
+/** Balance config page handler */
+void handleBalance() {
+  String CurrentBalance = String(balance, 8);
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+  server.sendContent(
+    "<html><head></head><body>"
+    "<h1>Address Monitoring</h1>"
+  );
+  server.sendContent(String("<p>You are currently monitoring bitcoin address: ") + address + "</p>");
+  server.sendContent(String("<p>Current Balance: ") + CurrentBalance + " BTC</p>");
+  server.sendContent(
+    "</table>"
+    "\r\n<br /><form method='POST' action='wifisave'><h4>Enter new address to monitor:</h4>"
+    "<input type='text' placeholder='address' name='b'/>"
+    "<br /><input type='submit' value='Submit'/></form>"
+    "<p><a href='/'>BACK</a></p>"
+    "</body></html>"
+  );
+
+  server.client().stop(); // Stop is needed because we sent no content length
+
+}
+
+/** Web Update page handler */
+void handleUpdate() {
+
+}
+
+/*void handleUpdate() {
+    server.on("/", HTTP_GET, [](){
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/html", "<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>"); 
+ //   "<html><head></head><body>"
+ //   "<h1>Firmware Updater</h1>"
+    });
+
+      server.on("/update", HTTP_POST, [](){
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+      ESP.restart();
+    },[](){
+      HTTPUpload& upload = server.upload();
+      if(upload.status == UPLOAD_FILE_START){
+        Serial.setDebugOutput(true);
+        WiFiUDP::stopAll();
+        Serial.printf("Update: %s\n", upload.filename.c_str());
+        uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+        if(!Update.begin(maxSketchSpace)){//start with max available size
+          Update.printError(Serial);
+        }
+      } else if(upload.status == UPLOAD_FILE_WRITE){
+        if(Update.write(upload.buf, upload.currentSize) != upload.currentSize){
+          Update.printError(Serial);
+        }
+      } else if(upload.status == UPLOAD_FILE_END){
+        if(Update.end(true)){ //true to set the size to the current progress
+          Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+        } else {
+          Update.printError(Serial);
+        }
+        Serial.setDebugOutput(false);
+      }
+      yield();
+    });
+     server.begin();
+}
+*/
 /** Handle the WLAN save form and redirect to WLAN config page again */
 void handleWifiSave() {
   
@@ -139,7 +214,6 @@ void handleWifiSave() {
   if (server.arg("t") != 0){
     Serial.println("ticker save");
     server.arg("t").toCharArray(coinname, sizeof(coinname) - 1);
-
     server.sendHeader("Location", "ticker", true);
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     server.sendHeader("Pragma", "no-cache");
@@ -148,6 +222,20 @@ void handleWifiSave() {
     server.client().stop(); // Stop is needed because we sent no content length
     saveCredentials();
     }
+    
+  if (server.arg("b") != 0){
+    server.arg("b").toCharArray(address, sizeof(address) - 1);
+    //Serial.println("address save: ");
+    //Serial.println(address);
+    server.sendHeader("Location", "balance", true);
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
+    server.send ( 302, "text/plain", "");  // Empty content inhibits Content-length header so we have to close the socket ourselves.
+    server.client().stop(); // Stop is needed because we sent no content length
+    //saveCredentials();
+    }
+    
 }
 
 void handleNotFound() {
