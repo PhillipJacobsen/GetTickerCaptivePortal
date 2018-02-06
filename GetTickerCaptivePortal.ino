@@ -1,7 +1,9 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h> 
 #include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
 #include <DNSServer.h>
+#include <ESP8266HTTPClient.h>
 #include <ESP8266mDNS.h>
 #include <EEPROM.h>
 
@@ -41,6 +43,9 @@ const char *myHostname = "esp8266";
 char ssid[32] = "";
 char password[32] = "";
 char coinname[32] = "";
+char address[36] = "";
+float balance = 0.000000000;
+
 
 // DNS server
 const byte DNS_PORT = 53;
@@ -48,6 +53,7 @@ DNSServer dnsServer;
 
 // Web server
 ESP8266WebServer server(80);
+ESP8266HTTPUpdateServer httpUpdater;
 
 /* Soft AP network parameters */
 IPAddress apIP(192, 168, 4, 1);
@@ -68,6 +74,7 @@ unsigned long api_due_time = 0;
 
 WiFiClientSecure client;
 CoinMarketCapApi api(client);
+HTTPClient http;
 
 void setup() {
   delay(1000);
@@ -97,10 +104,14 @@ void setup() {
   server.on("/wifi", handleWifi);
   server.on("/wifisave", handleWifiSave);
   server.on("/ticker", handleTicker);
+  server.on("/balance", handleBalance);
+  //server.on("/update", handleUpdate);
   server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
   server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
   server.onNotFound ( handleNotFound );
   server.begin(); // Web server start
+  httpUpdater.setup(&server); //setup web updater  
+
   Serial.println("HTTP server started");
   loadCredentials(); // Load WLAN credentials from network
   connect = strlen(ssid) > 0; // Request WLAN connect if there is a SSID
@@ -188,11 +199,36 @@ void loop() {
   unsigned long timeNow = millis();
   if ((timeNow > api_due_time))  {
     printTickerData(coinname);
-    //printTickerData("bitcoin");
     api_due_time = timeNow + api_mtbs;
+
+  //Blockchain.info http GET
+  String url;
+  url = "http://blockchain.info/q/addressbalance/";
+  url += address;
+  Serial.println(url);
+  // http.begin( "http://blockchain.info/q/getdifficulty");
+   http.begin(url);
+   int httpCode = http.GET();
+
+   // httpCode will be negative on error
+   if(httpCode > 0) {
+    // HTTP header has been send and Server response header has been handled
+     //USE_SERIAL.printf("[HTTP] GET... code: %d\n", httpCode);    
+         if(httpCode == HTTP_CODE_OK) {
+                String payload = http.getString();
+                balance=((payload.toFloat())/100000000);  //satoshi to BTC
+                if (balance >0) {
+                  Serial.println(balance, 8);
+                }
+                else {
+                  Serial.println("no address entered");
+                }
+            }
+        } else {
+            Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+        }
   } 
 }
-
 
 void printTickerData(String ticker) {
   Serial.println("---------------------------------");
