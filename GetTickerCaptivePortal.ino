@@ -30,8 +30,6 @@
 #include <Wire.h>
 #endif
 
-
-
 //  UNO connections -> use hardware I2C connections
 //  SDA ->A4
 //  SCL ->A5
@@ -120,28 +118,28 @@ const int TRIGGER_PIN = 13; // D7 on NodeMCU
 bool initialConfig = false;
 
 void setup() {
-#ifdef OLED_DISPLAY  
+#ifdef OLED_DISPLAY
   u8g2.begin();
   u8g2.clearBuffer();          // clear the internal memory
   //u8g2.setFont(u8g2_font_ncenB08_tr);  // 8 pixel height
-   u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
-  
+  u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
+
   u8g2.drawStr(0, 12, "Connecting"); // write something to the internal memory
   u8g2.sendBuffer();          // transfer internal memory to the display
 #endif
-//watchdog info  
-//known bug: first hardware watchdog reset after serial firmware download will freez device. After 1 hardware reset the system will correctly reset after hardware watchdog timeout.
+  //watchdog info
+  //known bug: first hardware watchdog reset after serial firmware download will freez device. After 1 hardware reset the system will correctly reset after hardware watchdog timeout.
 
-//https://sigmdel.ca/michel/program/esp8266/arduino/watchdogs_en.html#ESP8266_SW_WDT
-  
-//feeding watchdogs
-//  https://github.com/esp8266/Arduino/pull/2533/files
+  //https://sigmdel.ca/michel/program/esp8266/arduino/watchdogs_en.html#ESP8266_SW_WDT
 
-//https://community.blynk.cc/t/solved-esp8266-nodemcu-v1-0-and-wdt-resets/7047/11
-//ESP.wdtDisable();
-//ESP.wdtEnable(WDTO_8S);
+  //feeding watchdogs
+  //  https://github.com/esp8266/Arduino/pull/2533/files
+
+  //https://community.blynk.cc/t/solved-esp8266-nodemcu-v1-0-and-wdt-resets/7047/11
+  //ESP.wdtDisable();
+  //ESP.wdtEnable(WDTO_8S);
   delay(2);    //feed watchdog
-  
+
   // initialize the on board LED digital pin as an output.
   // This pin is used to indicated AP configuration mode
   pinMode(PIN_LED, OUTPUT);
@@ -175,7 +173,7 @@ void setup() {
     Serial.print(waited / 1000);
     Serial.print(" secs in setup() connection result is ");
     Serial.println(connRes);
- 
+
   }
 
   //connect push button to the this pin,with internal pullup.
@@ -195,20 +193,20 @@ void setup() {
     server.on("/wifi", handleWifi);
     server.on("/wifisave", handleWifiSave);
     server.on("/ticker", handleTicker);
-  server.on("/balance", handleBalance);
-  //server.on("/update", handleUpdate);
+    server.on("/balance", handleBalance);
+    //server.on("/update", handleUpdate);
     server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
     server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
     server.onNotFound ( handleNotFound );
     server.begin(); // Web server start
-  httpUpdater.setup(&server); //setup web updater  
+    httpUpdater.setup(&server); //setup web updater
     Serial.println("HTTP server started");
 
     loadCredentials(); // Load WLAN credentials, ticker from network
-#ifdef OLED_DISPLAY    
-  u8g2.clearBuffer();               // clear the internal memory
-  u8g2.drawStr(0, 12, "Connected"); // write to the internal memory
-  u8g2.sendBuffer();                // transfer internal memory to the display
+#ifdef OLED_DISPLAY
+    u8g2.clearBuffer();               // clear the internal memory
+    u8g2.drawStr(0, 12, "Connected"); // write to the internal memory
+    u8g2.sendBuffer();                // transfer internal memory to the display
 #endif
 
   }
@@ -219,11 +217,11 @@ void setup() {
 
 
 void loop() {
-  
-ESP.wdtFeed();
+
+  ESP.wdtFeed();
   delay(2);    //feed watchdog
-//=================================================================  
-// is configuration portal requested by push button
+  //=================================================================
+  // is configuration portal requested by push button
   if (digitalRead(TRIGGER_PIN) == LOW) {
     Serial.println("Configuration portal requested by button press");
     digitalWrite(PIN_LED, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
@@ -233,11 +231,11 @@ ESP.wdtFeed();
     ESP.restart(); //restart is supposedly better then reset. not really sure all the reasons.
     //    ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
   }
-//=================================================================
+  //=================================================================
 
 
-//=================================================================
-// is configuration portal requested by blank SSID
+  //=================================================================
+  // is configuration portal requested by blank SSID
   if ((initialConfig)) {
     Serial.println("Configuration portal requested by blank SSID");
     digitalWrite(PIN_LED, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
@@ -267,7 +265,7 @@ ESP.wdtFeed();
     ESP.restart();
     //   ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
     // so resetting the device allows to go back into config mode again when it reboots.
-//    delay(5000);
+    //    delay(5000);
 
     //https://github.com/esp8266/Arduino/issues/1722
     //ESP.reset() is a hard reset and can leave some of the registers in the old state which can lead to problems, its more or less like the reset button on the PC.
@@ -281,57 +279,57 @@ ESP.wdtFeed();
     //server.close
     //server.reset;
   }
-//=================================================================
+  //=================================================================
 
 
 
   server.handleClient();
-ESP.wdtFeed();
+  ESP.wdtFeed();
 
 
   unsigned long timeNow = millis();
   if ((timeNow > api_due_time))  {
     printTickerData(coinname);
-    
+
     api_due_time = timeNow + api_mtbs;
 
 
 
-    
-  //Blockchain.info http GET
-  String url;
-  url = "http://blockchain.info/q/addressbalance/";
-  url += address;
-  Serial.println(url);
-  // http.begin( "http://blockchain.info/q/getdifficulty");
-   http.begin(url);
-   int httpCode = http.GET();
-delay(2);    //feed watchdog
-   // httpCode will be negative on error
-   if(httpCode > 0) {
-    // HTTP header has been send and Server response header has been handled
-     //USE_SERIAL.printf("[HTTP] GET... code: %d\n", httpCode);    
-         if(httpCode == HTTP_CODE_OK) {
-                String payload = http.getString();
-                balance=((payload.toFloat())/100000000);  //satoshi to BTC
-                if (balance >0) {
-                  Serial.println(balance, 8);
-                }
-                else {
-                  Serial.println("no address entered");
-                }
-            }
-        } else {
-            Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+
+    //Blockchain.info http GET
+    String url;
+    url = "http://blockchain.info/q/addressbalance/";
+    url += address;
+    Serial.println(url);
+    // http.begin( "http://blockchain.info/q/getdifficulty");
+    http.begin(url);
+    int httpCode = http.GET();
+    delay(2);    //feed watchdog
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been send and Server response header has been handled
+      //USE_SERIAL.printf("[HTTP] GET... code: %d\n", httpCode);
+      if (httpCode == HTTP_CODE_OK) {
+        String payload = http.getString();
+        balance = ((payload.toFloat()) / 100000000); //satoshi to BTC
+        if (balance > 0) {
+          Serial.println(balance, 8);
         }
-  } 
+        else {
+          Serial.println("no address entered");
+        }
+      }
+    } else {
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    }
+  }
 }
 
 void printTickerData(String ticker) {
   Serial.println("---------------------------------");
   Serial.println("Getting ticker data for " + ticker);
-ESP.wdtFeed();
-delay(2);
+  ESP.wdtFeed();
+  delay(2);
   CMCTickerResponse response = api.GetTickerInfo(ticker);
   if (response.error == "") {
     Serial.print("Name: ");
@@ -341,40 +339,50 @@ delay(2);
     Serial.print("Price in USD: ");
     Serial.println(response.price_usd);
 
-#ifdef OLED_DISPLAY    
+#ifdef OLED_DISPLAY
     u8g2.clearBuffer();          // clear the internal memory, requires sendBuffer
-    u8g2.sendBuffer();          // transfer internal memory to the display
-        
+//    u8g2.sendBuffer();          // transfer internal memory to the display
+
     // u8g2.drawStr(0,30,"hello");  // write something to the internal memory
 
-    u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
+    //u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
+    u8g2.setFont(u8g2_font_ncenB10_tr );  // 11 pixel height
+
     u8g2.setCursor(0, 12);
     u8g2.print(ticker);
 
     u8g2.setCursor(70, 12);
     u8g2.print(response.price_usd);
 
-    
+
     u8g2.setFont(u8g2_font_ncenB10_tr );  // 11 pixel height
     u8g2.setCursor(0, 30);
     u8g2.print("1hr");
-    
+
     u8g2.setCursor(0, 45);
     u8g2.print(response.percent_change_1h);
 
     u8g2.setCursor(47, 30);
     u8g2.print("24hr");
-    
+
     u8g2.setCursor(47, 45);
-    u8g2.print(response.percent_change_24h);   
+    u8g2.print(response.percent_change_24h);
 
 
     u8g2.setCursor(100, 30);
     u8g2.print("7d");
-    
-    u8g2.setCursor(95, 45);
-    u8g2.print(response.percent_change_7d);   
 
+    u8g2.setCursor(95, 45);
+    u8g2.print(response.percent_change_7d);
+
+
+
+    u8g2.setCursor(0, 60);
+    u8g2.print("balance: ");
+ //   u8g2.setCursor(0, 60);
+  //  u8g2.print(balance,3);    //display bitcoin balance in address
+    u8g2.print(balance*response.price_usd,3);  //display USD value in bitcoin address
+    
     
 
     u8g2.sendBuffer();          // transfer internal memory to the display
