@@ -1,3 +1,4 @@
+//ESP8266 Community V2.4 (In Board Manager)
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
@@ -14,6 +15,46 @@
 #include <Adafruit_NeoPixel.h>
 //--------------------------------------------
 
+#define OLED_DISPLAY
+
+#ifdef OLED_DISPLAY
+//------- OLED display -------
+#include <Arduino.h>
+#include <U8g2lib.h>
+
+
+#ifdef U8X8_HAVE_HW_SPI
+#include <SPI.h>
+#endif
+#ifdef U8X8_HAVE_HW_I2C
+#include <Wire.h>
+#endif
+
+
+
+//  UNO connections -> use hardware I2C connections
+//  SDA ->A4
+//  SCL ->A5
+
+//  ESP8266 module ->use hardware I2C connections
+//  SDA ->NodeMCU D2 pin
+//  SCL ->NodeMCU D1 pin
+
+/*
+  U8glib  Overview:
+    Frame Buffer Examples: clearBuffer/sendBuffer. Fast, but may not work with all Arduino boards because of RAM consumption
+    Page Buffer Examples: firstPage/nextPage. Less RAM usage, should work with all Arduino boards.
+    U8x8 Text Only Example: No RAM usage, direct communication with display controller. No graphics, 8x8 Text only.
+*/
+
+// U8g2 Contructor List (Frame Buffer)
+// The complete list is available here: https://github.com/olikraus/u8g2/wiki/u8g2setupcpp
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+
+#endif
+
+
+//--------------------------------------------
 #define PIN 9            //Neopixel Data Pin  [ESP8266 - GPIO9]
 #define NUM_LEDS 6       //Length of Neopixel Strand
 
@@ -79,6 +120,15 @@ const int TRIGGER_PIN = 13; // D7 on NodeMCU
 bool initialConfig = false;
 
 void setup() {
+#ifdef OLED_DISPLAY  
+  u8g2.begin();
+  u8g2.clearBuffer();          // clear the internal memory
+  //u8g2.setFont(u8g2_font_ncenB08_tr);  // 8 pixel height
+   u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
+  
+  u8g2.drawStr(0, 12, "Connecting"); // write something to the internal memory
+  u8g2.sendBuffer();          // transfer internal memory to the display
+#endif
 //watchdog info  
 //known bug: first hardware watchdog reset after serial firmware download will freez device. After 1 hardware reset the system will correctly reset after hardware watchdog timeout.
 
@@ -155,6 +205,11 @@ void setup() {
     Serial.println("HTTP server started");
 
     loadCredentials(); // Load WLAN credentials, ticker from network
+#ifdef OLED_DISPLAY    
+  u8g2.clearBuffer();               // clear the internal memory
+  u8g2.drawStr(0, 12, "Connected"); // write to the internal memory
+  u8g2.sendBuffer();                // transfer internal memory to the display
+#endif
 
   }
 
@@ -286,6 +341,44 @@ delay(2);
     Serial.print("Price in USD: ");
     Serial.println(response.price_usd);
 
+#ifdef OLED_DISPLAY    
+    u8g2.clearBuffer();          // clear the internal memory, requires sendBuffer
+    u8g2.sendBuffer();          // transfer internal memory to the display
+        
+    // u8g2.drawStr(0,30,"hello");  // write something to the internal memory
+
+    u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
+    u8g2.setCursor(0, 12);
+    u8g2.print(ticker);
+
+    u8g2.setCursor(70, 12);
+    u8g2.print(response.price_usd);
+
+    
+    u8g2.setFont(u8g2_font_ncenB10_tr );  // 11 pixel height
+    u8g2.setCursor(0, 30);
+    u8g2.print("1hr");
+    
+    u8g2.setCursor(0, 45);
+    u8g2.print(response.percent_change_1h);
+
+    u8g2.setCursor(47, 30);
+    u8g2.print("24hr");
+    
+    u8g2.setCursor(47, 45);
+    u8g2.print(response.percent_change_24h);   
+
+
+    u8g2.setCursor(100, 30);
+    u8g2.print("7d");
+    
+    u8g2.setCursor(95, 45);
+    u8g2.print(response.percent_change_7d);   
+
+    
+
+    u8g2.sendBuffer();          // transfer internal memory to the display
+#endif
     Serial.print("Percent Change 24h: ");
     Serial.println(response.percent_change_24h);
     Serial.print("Last Updated: ");
