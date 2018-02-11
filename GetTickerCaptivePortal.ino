@@ -1,11 +1,12 @@
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h> 
+#include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <DNSServer.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266mDNS.h>
 #include <EEPROM.h>
+#include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
 
 //------- Install From Library Manager -------
 #include <ArduinoJson.h>
@@ -27,17 +28,15 @@
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800);
 
 // LED Definitions
-const int LED_GREEN = 16; //ESP8266 - GPIO16 
-const int LED_RED = 5;    //ESP8266 - GPIO5 
+const int LED_GREEN = 16; //ESP8266 - GPIO16
+const int LED_RED = 5;    //ESP8266 - GPIO5
 const int LED_BLUE = 4;   //ESP8266 - GPIO4
-int i,j=0;
+int i, j = 0;
 
-/* Set these to your desired softAP credentials. They are not configurable at runtime */
-const char *softAP_ssid = "ESP8266";
-const char *softAP_password = "12345678";
 
-/* hostname for mDNS. Should work at least on windows. Try http://esp8266.local */
-const char *myHostname = "esp8266";
+// Onboard LED I/O pin on NodeMCU board
+const int PIN_LED = 2; // D4 on NodeMCU and WeMos. Controls the onboard LED.
+
 
 /* Don't set this wifi credentials. They are configurated at runtime and stored on EEPROM */
 char ssid[32] = "";
@@ -47,160 +46,203 @@ char address[36] = "";
 float balance = 0.000000000;
 
 
-// DNS server
-const byte DNS_PORT = 53;
-DNSServer dnsServer;
-
 // Web server
+
+//std::unique_ptr<ESP8266WebServer> server;
 ESP8266WebServer server(80);
 ESP8266HTTPUpdateServer httpUpdater;
 
-/* Soft AP network parameters */
-IPAddress apIP(192, 168, 4, 1);
-IPAddress netMsk(255, 255, 255, 0);
 
 /** Should I connect to WLAN asap? */
-boolean connect;
+//boolean connect;
 
 /** Last time I tried to connect to WLAN */
-long lastConnectTry = 0;
+//long lastConnectTry = 0;
 
 /** Current WLAN status */
-int status = WL_IDLE_STATUS;
+//int status = WL_IDLE_STATUS;
 
 // CoinMarketCap's limit is "no more than 10 per minute"
-unsigned long api_mtbs = 60000; //mean time between api requests
+unsigned long api_mtbs = 10000; //mean time between api requests
 unsigned long api_due_time = 0;
 
 WiFiClientSecure client;
 CoinMarketCapApi api(client);
 HTTPClient http;
 
+//  select wich pin will trigger the configuration portal when set to LOW
+//  Needs to be connected to a button to use this pin. It must be a momentary connection
+//  not connected permanently to ground.
+const int TRIGGER_PIN = 13; // D7 on NodeMCU
+
+// Indicates whether ESP has WiFi credentials saved from previous session
+bool initialConfig = false;
+
 void setup() {
-  delay(1000);
+//watchdog info  
+//known bug: first hardware watchdog reset after serial firmware download will freez device. After 1 hardware reset the system will correctly reset after hardware watchdog timeout.
+
+//https://sigmdel.ca/michel/program/esp8266/arduino/watchdogs_en.html#ESP8266_SW_WDT
   
+//feeding watchdogs
+//  https://github.com/esp8266/Arduino/pull/2533/files
+
+//https://community.blynk.cc/t/solved-esp8266-nodemcu-v1-0-and-wdt-resets/7047/11
+//ESP.wdtDisable();
+//ESP.wdtEnable(WDTO_8S);
+  delay(2);    //feed watchdog
+  
+  // initialize the on board LED digital pin as an output.
+  // This pin is used to indicated AP configuration mode
+  pinMode(PIN_LED, OUTPUT);
+
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
   pinMode(LED_RED, OUTPUT);
+
+  //configure NeoPixels
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
-  
+
   Serial.begin(115200);
-  Serial.println();
-  Serial.print("Configuring access point...");
-  WiFi.softAPConfig(apIP, apIP, netMsk);
-  WiFi.softAP(softAP_ssid, softAP_password);     /* You can remove the password parameter if you want the AP to be open. */
-  //WiFi.softAP(softAP_ssid);
-  delay(500); // Without delay I've seen the IP address blank
-  Serial.print("AP IP address: ");
-  Serial.println(WiFi.softAPIP());
+  Serial.println("\n Starting");
+  WiFi.printDiag(Serial); //Remove this line if you do not want to see WiFi password printed
 
-  /* Setup the DNS server redirecting all the domains to the apIP */  
-  dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
-  dnsServer.start(DNS_PORT, "*", apIP);
+  //If there is no stored SSID then set flag so we can startup in AP mode to configure the wifi login paramaters. The ESP8266 low level SDK stores the SSID in a reserved part of memory.
+  if (WiFi.SSID() == "") {
+    Serial.println("We haven't got any access point credentials, so get them now");
+    initialConfig = true;
+  }
 
-  /* Setup web pages: root, wifi config pages, SO captive portal detectors and not found. */
-  server.on("/", handleRoot);
-  server.on("/wifi", handleWifi);
-  server.on("/wifisave", handleWifiSave);
-  server.on("/ticker", handleTicker);
+  //there is stored SSID so try to connect to saved WiFi network
+  else {
+    digitalWrite(PIN_LED, HIGH); // Turn led off as we are not in configuration mode.
+    WiFi.mode(WIFI_STA); // Force to station mode because if device was switched off while in access point mode it will start up next time in access point mode.
+    unsigned long startedAt = millis();     //time that we began the wifi connection attempt
+    Serial.print("After waiting ");
+    int connRes = WiFi.waitForConnectResult();
+    float waited = (millis() - startedAt);
+    Serial.print(waited / 1000);
+    Serial.print(" secs in setup() connection result is ");
+    Serial.println(connRes);
+ 
+  }
+
+  //connect push button to the this pin,with internal pullup.
+  pinMode(TRIGGER_PIN, INPUT_PULLUP);
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("failed to connect, finishing setup anyway");
+
+  } else {
+    //if you get here you have connected to the WiFi
+    Serial.println("connected...giddyup :)");
+    Serial.print("local ip: ");
+    Serial.println(WiFi.localIP());
+
+    /* Setup web pages: root, wifi config pages, SO captive portal detectors and not found. */
+    server.on("/", handleRoot);
+    server.on("/wifi", handleWifi);
+    server.on("/wifisave", handleWifiSave);
+    server.on("/ticker", handleTicker);
   server.on("/balance", handleBalance);
   //server.on("/update", handleUpdate);
-  server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
-  server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
-  server.onNotFound ( handleNotFound );
-  server.begin(); // Web server start
+    server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
+    server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
+    server.onNotFound ( handleNotFound );
+    server.begin(); // Web server start
   httpUpdater.setup(&server); //setup web updater  
+    Serial.println("HTTP server started");
 
-  Serial.println("HTTP server started");
-  loadCredentials(); // Load WLAN credentials from network
-  connect = strlen(ssid) > 0; // Request WLAN connect if there is a SSID
+    loadCredentials(); // Load WLAN credentials, ticker from network
+
+  }
+
 }
 
-void connectWifi() {
-  Serial.println("Connecting as wifi client...");
-  WiFi.disconnect();
-  WiFi.begin ( ssid, password );
-  int connRes = WiFi.waitForConnectResult();
-  Serial.print ( "connRes: " );
-  Serial.println ( connRes );
-   /*switch (connRes){
-        case 0:
-          Serial.println (connRes" - Idle Status");
-          break;
-        case 1:
-          Serial.println (connRes" - Incorrect SSID");
-          break;
-        case 2:
-          Serial.println (connRes" - WiFi Scan Completed");
-          break;
-        case 3:
-          Serial.println (connRes" - Connected");
-          break;
-        case 4:
-          Serial.println (connRes" - Connect Failed");
-          break;
-        case 5:
-          Serial.println (connRes" - Connection Lost");
-          break;
-        case 6:
-          Serial.println (connRes" - Disconnected");
-          break;
-          }     */
-}
+
+
 
 void loop() {
-  if (connect) {
-    Serial.println ( "Connect requested" );
-    connect = false;
-    connectWifi();
-    lastConnectTry = millis();
+  
+ESP.wdtFeed();
+  delay(2);    //feed watchdog
+//=================================================================  
+// is configuration portal requested by push button
+  if (digitalRead(TRIGGER_PIN) == LOW) {
+    Serial.println("Configuration portal requested by button press");
+    digitalWrite(PIN_LED, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+    WiFiManager wifiManager;
+    //reset settings - for testing (this clears the ssid stored in eeprom by the esp8266 ssd. not sure what else it does.
+    wifiManager.resetSettings();
+    ESP.restart(); //restart is supposedly better then reset. not really sure all the reasons.
+    //    ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
   }
-  {
-    int s = WiFi.status(); 
-    if (s == 0 && millis() > (lastConnectTry + 60000) ) {
-      /* If WLAN disconnected and idle try to connect */
-      /* Don't set retry time too low as retry interfere the softAP operation */
-      connect = true;
-    }
-    if (status != s) { // WLAN status change
-      Serial.print ( "Status: " );
-      Serial.print ( s );
-      status = s;
- 
-      if (s == WL_CONNECTED) {
-        /* Just connected to WLAN */
-        Serial.println ( "" );
-        Serial.print ( "Connected to " );
-        Serial.println ( ssid );
-        Serial.print ( "IP address: " );
-        Serial.println ( WiFi.localIP() );
+//=================================================================
 
-        // Setup MDNS responder
-        if (!MDNS.begin(myHostname)) {
-          Serial.println("Error setting up MDNS responder!");
-        } else {
-          Serial.println("mDNS responder started");
-          // Add service to MDNS-SD
-          MDNS.addService("http", "tcp", 80);
-        }
-      } else if (s == WL_NO_SSID_AVAIL) {
-        WiFi.disconnect();
-      }
+
+//=================================================================
+// is configuration portal requested by blank SSID
+  if ((initialConfig)) {
+    Serial.println("Configuration portal requested by blank SSID");
+    digitalWrite(PIN_LED, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+    //Local intialization. Once its business is done, there is no need to keep it around
+
+    WiFiManager wifiManager;
+
+    //reset settings - for testing (this clears the ssid stored in eeprom by the esp8266 ssd. not sure what else it does.
+    //    wifiManager.resetSettings();
+
+
+    //sets timeout in seconds until configuration portal gets turned off.
+    //If not specified device will remain in configuration mode until
+    //switched off via webserver or device is restarted.
+    //wifiManager.setConfigPortalTimeout(600);
+
+    //it starts an access point
+    //and goes into a blocking loop awaiting configuration
+    if (!wifiManager.startConfigPortal()) {
+      Serial.println("Not connected to WiFi but continuing anyway.");
+    } else {
+      //if you get here you have connected to the WiFi
+      Serial.println("connected...yeey :)");
     }
+    digitalWrite(PIN_LED, HIGH); // Turn led off as we are not in configuration mode.
+
+    ESP.restart();
+    //   ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
+    // so resetting the device allows to go back into config mode again when it reboots.
+//    delay(5000);
+
+    //https://github.com/esp8266/Arduino/issues/1722
+    //ESP.reset() is a hard reset and can leave some of the registers in the old state which can lead to problems, its more or less like the reset button on the PC.
+    //ESP.restart() tells the SDK to reboot, so its a more clean reboot, use this one if possible.
+    //the boot mode:(1,7) problem is known and only happens at the first restart after serial flashing.
+    //if you do one manual reboot by power or RST pin all will work more info see: #1017
+
+    //https://github.com/tzapu/WiFiManager/issues/86
+    //ESP8266WebServer server(80);      https://github.com/esp8266/Arduino/issues/686
+    // server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
+    //server.close
+    //server.reset;
   }
-    
-  // Do work:
-  //DNS
-  dnsServer.processNextRequest();
-  //HTTP
+//=================================================================
+
+
+
   server.handleClient();
+ESP.wdtFeed();
+
 
   unsigned long timeNow = millis();
   if ((timeNow > api_due_time))  {
     printTickerData(coinname);
+    
     api_due_time = timeNow + api_mtbs;
 
+
+
+    
   //Blockchain.info http GET
   String url;
   url = "http://blockchain.info/q/addressbalance/";
@@ -209,7 +251,7 @@ void loop() {
   // http.begin( "http://blockchain.info/q/getdifficulty");
    http.begin(url);
    int httpCode = http.GET();
-
+delay(2);    //feed watchdog
    // httpCode will be negative on error
    if(httpCode > 0) {
     // HTTP header has been send and Server response header has been handled
@@ -233,7 +275,8 @@ void loop() {
 void printTickerData(String ticker) {
   Serial.println("---------------------------------");
   Serial.println("Getting ticker data for " + ticker);
-
+ESP.wdtFeed();
+delay(2);
   CMCTickerResponse response = api.GetTickerInfo(ticker);
   if (response.error == "") {
     Serial.print("Name: ");
@@ -254,71 +297,71 @@ void printTickerData(String ticker) {
   }
   Serial.println("---------------------------------");
 
-    if ((response.percent_change_24h) > 0) {
-      digitalWrite(LED_GREEN, LOW); //Green active low
-      digitalWrite(LED_RED, HIGH);
-      strip.clear();
-      if ((response.percent_change_24h) < 5) {
-        strip.setPixelColor(3, strip.Color(0, 255, 0));
-        strip.show(); 
-      }
-      else if (((response.percent_change_24h) > 5) && (response.percent_change_24h) < 10) {
-        strip.setPixelColor(3, strip.Color(0, 255, 0));
-        strip.setPixelColor(4, strip.Color(0, 255, 0));
-        strip.show();
-      }
-      else if ((response.percent_change_24h) > 10) {
-        strip.setPixelColor(3, strip.Color(0, 255, 0));
-        strip.setPixelColor(4, strip.Color(0, 255, 0));
-        strip.setPixelColor(5, strip.Color(0, 255, 0));
-        strip.show();
-      }  
+  if ((response.percent_change_24h) > 0) {
+    digitalWrite(LED_GREEN, LOW); //Green active low
+    digitalWrite(LED_RED, HIGH);
+    strip.clear();
+    if ((response.percent_change_24h) < 5) {
+      strip.setPixelColor(3, strip.Color(0, 255, 0));
+      strip.show();
     }
-   else if((response.percent_change_24h) < 0) {
-      digitalWrite(LED_GREEN, HIGH);
-      digitalWrite(LED_RED, LOW); 
-      strip.clear();
-    if ((response.percent_change_24h) > -5) { 
-        strip.setPixelColor(2, strip.Color(255, 0, 0));
-        strip.show(); 
-     }
-     else if (((response.percent_change_24h) < -5) && (response.percent_change_24h) > -10) {
-        strip.setPixelColor(2, strip.Color(255, 0, 0));
-        strip.setPixelColor(1, strip.Color(255, 0, 0));
-        strip.show();
-     }
-     else if ((response.percent_change_24h) < -10) {
-        strip.setPixelColor(2, strip.Color(255, 0, 0));
-        strip.setPixelColor(1, strip.Color(255, 0, 0));
-        strip.setPixelColor(0, strip.Color(255, 0, 0));
-        strip.show();
-     }
-   }
+    else if (((response.percent_change_24h) > 5) && (response.percent_change_24h) < 10) {
+      strip.setPixelColor(3, strip.Color(0, 255, 0));
+      strip.setPixelColor(4, strip.Color(0, 255, 0));
+      strip.show();
+    }
+    else if ((response.percent_change_24h) > 10) {
+      strip.setPixelColor(3, strip.Color(0, 255, 0));
+      strip.setPixelColor(4, strip.Color(0, 255, 0));
+      strip.setPixelColor(5, strip.Color(0, 255, 0));
+      strip.show();
+    }
+  }
+  else if ((response.percent_change_24h) < 0) {
+    digitalWrite(LED_GREEN, HIGH);
+    digitalWrite(LED_RED, LOW);
+    strip.clear();
+    if ((response.percent_change_24h) > -5) {
+      strip.setPixelColor(2, strip.Color(255, 0, 0));
+      strip.show();
+    }
+    else if (((response.percent_change_24h) < -5) && (response.percent_change_24h) > -10) {
+      strip.setPixelColor(2, strip.Color(255, 0, 0));
+      strip.setPixelColor(1, strip.Color(255, 0, 0));
+      strip.show();
+    }
+    else if ((response.percent_change_24h) < -10) {
+      strip.setPixelColor(2, strip.Color(255, 0, 0));
+      strip.setPixelColor(1, strip.Color(255, 0, 0));
+      strip.setPixelColor(0, strip.Color(255, 0, 0));
+      strip.show();
+    }
+  }
 
- 
+
 }
 // Fill the dots one after the other with a color
 void colorWipe(uint32_t c, uint8_t wait) {
   //for(uint16_t i=0; i<strip.numPixels(); i++) {
-    Serial.print(i);
-    strip.setPixelColor(i, c);
-    strip.show(); 
-    delay(wait); 
-    i++;
-    if (i>strip.numPixels()) {
-      strip.clear();
-      i=0;
-    } 
+  Serial.print(i);
+  strip.setPixelColor(i, c);
+  strip.show();
+  delay(wait);
+  i++;
+  if (i > strip.numPixels()) {
+    strip.clear();
+    i = 0;
+  }
 }
 
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
 uint32_t Wheel(byte WheelPos) {
   WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
+  if (WheelPos < 85) {
     return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
   }
-  if(WheelPos < 170) {
+  if (WheelPos < 170) {
     WheelPos -= 85;
     return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
