@@ -35,8 +35,8 @@
 //  SCL ->A5
 
 //  ESP8266 module ->use hardware I2C connections
-//  SDA ->NodeMCU D2 pin
-//  SCL ->NodeMCU D1 pin
+//  SDA ->NodeMCU D2 pin (GPIO4)
+//  SCL ->NodeMCU D1 pin (GPIO5)
 
 /*
   U8glib  Overview:
@@ -50,6 +50,7 @@
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 #endif
+
 
 
 //--------------------------------------------
@@ -68,8 +69,8 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800)
 
 // LED Definitions
 const int LED_GREEN = 16; //ESP8266 - GPIO16
-const int LED_RED = 5;    //ESP8266 - GPIO5
-const int LED_BLUE = 4;   //ESP8266 - GPIO4
+const int LED_RED = 0;    //ESP8266 - GPIO5
+const int LED_BLUE = 2;   //ESP8266 - GPIO4
 int i, j = 0;
 
 
@@ -218,8 +219,8 @@ void setup() {
 
 void loop() {
 
-  ESP.wdtFeed();
-  delay(2);    //feed watchdog
+  //  ESP.wdtFeed();
+  //  delay(2);    //feed watchdog
   //=================================================================
   // is configuration portal requested by push button
   if (digitalRead(TRIGGER_PIN) == LOW) {
@@ -284,7 +285,6 @@ void loop() {
 
 
   server.handleClient();
-  ESP.wdtFeed();
 
 
   unsigned long timeNow = millis();
@@ -328,8 +328,7 @@ void loop() {
 void printTickerData(String ticker) {
   Serial.println("---------------------------------");
   Serial.println("Getting ticker data for " + ticker);
-  ESP.wdtFeed();
-  delay(2);
+
   CMCTickerResponse response = api.GetTickerInfo(ticker);
   if (response.error == "") {
     Serial.print("Name: ");
@@ -340,10 +339,14 @@ void printTickerData(String ticker) {
     Serial.println(response.price_usd);
 
 #ifdef OLED_DISPLAY
-    u8g2.clearBuffer();          // clear the internal memory, requires sendBuffer
-//    u8g2.sendBuffer();          // transfer internal memory to the display
 
-    // u8g2.drawStr(0,30,"hello");  // write something to the internal memory
+    //u8g2.begin();
+    //loadCredentials();
+    u8g2.clearBuffer();          // clear the internal memory, requires sendBuffer
+ //   u8g2.sendBuffer();          // transfer internal memory to the display
+
+    //     u8g2.drawStr(0,30,"hello");  // write something to the internal memory
+    //u8g2.clearBuffer();
 
     //u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
     u8g2.setFont(u8g2_font_ncenB10_tr );  // 11 pixel height
@@ -351,7 +354,7 @@ void printTickerData(String ticker) {
     u8g2.setCursor(0, 12);
     u8g2.print(ticker);
 
-    u8g2.setCursor(70, 12);
+    u8g2.setCursor(65, 12);
     u8g2.print(response.price_usd);
 
 
@@ -372,20 +375,23 @@ void printTickerData(String ticker) {
     u8g2.setCursor(100, 30);
     u8g2.print("7d");
 
-    u8g2.setCursor(95, 45);
+    u8g2.setCursor(90, 45);
     u8g2.print(response.percent_change_7d);
 
 
 
     u8g2.setCursor(0, 60);
     u8g2.print("balance: ");
- //   u8g2.setCursor(0, 60);
-  //  u8g2.print(balance,3);    //display bitcoin balance in address
-    u8g2.print(balance*response.price_usd,3);  //display USD value in bitcoin address
-    
-    
-
+    //   u8g2.setCursor(0, 60);
+    //  u8g2.print(balance,3);    //display bitcoin balance in address
+    u8g2.print(balance * response.price_usd, 3); //display USD value in bitcoin address
     u8g2.sendBuffer();          // transfer internal memory to the display
+
+    //Serial.print("updating display!!!!!!!!!!!!!!!!!!!!!");
+    //  delay(250);
+ //   ESP.wdtFeed();
+
+
 #endif
     Serial.print("Percent Change 24h: ");
     Serial.println(response.percent_change_24h);
@@ -398,10 +404,14 @@ void printTickerData(String ticker) {
   }
   Serial.println("---------------------------------");
 
+
+
+
   if ((response.percent_change_24h) > 0) {
     digitalWrite(LED_GREEN, LOW); //Green active low
     digitalWrite(LED_RED, HIGH);
     strip.clear();
+
     if ((response.percent_change_24h) < 5) {
       strip.setPixelColor(3, strip.Color(0, 255, 0));
       strip.show();
@@ -418,6 +428,9 @@ void printTickerData(String ticker) {
       strip.show();
     }
   }
+
+
+
   else if ((response.percent_change_24h) < 0) {
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_RED, LOW);
