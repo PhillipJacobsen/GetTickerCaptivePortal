@@ -12,7 +12,29 @@
 //------- Install From Library Manager -------
 #include <ArduinoJson.h>
 #include <CoinMarketCapApi.h>
-#include <Adafruit_NeoPixel.h>
+
+//--------------------------------------------
+#include <NeoPixelBus.h>
+//optimized ESP8266 neopixel library:  https://github.com/Makuna
+//https://github.com/Makuna/NeoPixelBus/wiki/NeoPixelBus-object
+//This library is optimized to use the DMA on the ESP8266 for minimal cup usage. The standard Adafruit library has the potential to interfere with the 
+//WiFi processing done by the low level SDK
+//NeoPixelBus<FEATURE, METHOD> strip(pixelCount, pixelPin);
+// NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(16);
+//On the ESP8266 the Neo800KbpsMethod method will use this underlying method: NeoEsp8266Dma800KbpsMethod 
+//The NeoEsp8266Dma800KbpsMethod is the underlying method that gets used if you use Neo800KbpsMethod on Esp8266 platforms. There should be no need to use it directly.
+//The NeoEsp8266Dma800KbpsMethod only supports the RDX0/GPIO3 pin. The Pin argument is omitted. See other esp8266 methods below if you don't have this pin available.
+//This method uses very little CPU for actually sending the data to NeoPixels but it requires an extra buffer for the DMA to read from. 
+//Thus there is a trade off of CPU use versus memory use. The extra buffer needed is four times the size of the primary pixel buffer.
+// It also requires the use of the RDX0/GPIO3 pin. The normal feature of this pin is the "Serial" receive. 
+//Using this DMA method will not allow you to receive serial from the primary Serial object; but it will not stop you from sending output to the terminal program of a PC
+//Due to the pin overlap, there are a few things to take into consideration.
+//First, when you are flashing the Esp8266, some LED types will react to the flashing and turn on. 
+//This is important if you have longer strips of pixels where the power use of full bright might exceed your design.
+//Second, the NeoPixelBus::Begin() MUST be called after the Serial.begin(). 
+//If they are called out of order, no pixel data will be sent as the Serial reconfigured the RDX0/GPIO3 pin to its needs.
+
+
 //--------------------------------------------
 
 #define OLED_DISPLAY
@@ -54,18 +76,10 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 
 //--------------------------------------------
-#define PIN 9            //Neopixel Data Pin  [ESP8266 - GPIO9]
-#define NUM_LEDS 6       //Length of Neopixel Strand
+//#define PixelPin 9            //Neopixel Data Pin  [ESP8266 - GPIO9] (
+#define PixelCount 16       //Length of Neopixel Strand
 
-// Parameter 1 = number of pixels in strip
-// Parameter 2 = Arduino pin number (most are valid)
-// Parameter 3 = pixel type flags, add together as needed:
-//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
-//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
-//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
-//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
-//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800);
+NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount);  //default on ESP8266 is to use the D9(GPIO3,RXD0) pin with DMA.
 
 // LED Definitions
 const int LED_GREEN = 16; //ESP8266 - GPIO16
@@ -139,7 +153,7 @@ void setup() {
   //https://community.blynk.cc/t/solved-esp8266-nodemcu-v1-0-and-wdt-resets/7047/11
   //ESP.wdtDisable();
   //ESP.wdtEnable(WDTO_8S);
-  delay(2);    //feed watchdog
+//  delay(2);    //feed watchdog
 
   // initialize the on board LED digital pin as an output.
   // This pin is used to indicated AP configuration mode
@@ -149,12 +163,13 @@ void setup() {
   pinMode(LED_BLUE, OUTPUT);
   pinMode(LED_RED, OUTPUT);
 
-  //configure NeoPixels
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
-
   Serial.begin(115200);
   Serial.println("\n Starting");
+  
+  //configure NeoPixels
+  strip.Begin();
+  strip.Show(); // Initialize all pixels to 'off'
+
   WiFi.printDiag(Serial); //Remove this line if you do not want to see WiFi password printed
 
   //If there is no stored SSID then set flag so we can startup in AP mode to configure the wifi login paramaters. The ESP8266 low level SDK stores the SSID in a reserved part of memory.
@@ -410,22 +425,23 @@ void printTickerData(String ticker) {
   if ((response.percent_change_24h) > 0) {
     digitalWrite(LED_GREEN, LOW); //Green active low
     digitalWrite(LED_RED, HIGH);
-    strip.clear();
+    //strip.clear();
+    strip.ClearTo(RgbColor(0, 0, 0));
 
     if ((response.percent_change_24h) < 5) {
-      strip.setPixelColor(3, strip.Color(0, 255, 0));
-      strip.show();
+      strip.SetPixelColor(3, RgbColor (0, 255, 0));
+      strip.Show();
     }
     else if (((response.percent_change_24h) > 5) && (response.percent_change_24h) < 10) {
-      strip.setPixelColor(3, strip.Color(0, 255, 0));
-      strip.setPixelColor(4, strip.Color(0, 255, 0));
-      strip.show();
+      strip.SetPixelColor(3, RgbColor (0, 255, 0));
+      strip.SetPixelColor(4, RgbColor (0, 255, 0));
+      strip.Show();
     }
     else if ((response.percent_change_24h) > 10) {
-      strip.setPixelColor(3, strip.Color(0, 255, 0));
-      strip.setPixelColor(4, strip.Color(0, 255, 0));
-      strip.setPixelColor(5, strip.Color(0, 255, 0));
-      strip.show();
+      strip.SetPixelColor(3, RgbColor(0, 255, 0));
+      strip.SetPixelColor(4, RgbColor(0, 255, 0));
+      strip.SetPixelColor(5, RgbColor(0, 255, 0));
+      strip.Show();
     }
   }
 
@@ -434,52 +450,55 @@ void printTickerData(String ticker) {
   else if ((response.percent_change_24h) < 0) {
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_RED, LOW);
-    strip.clear();
+   // strip.clear();
+    strip.ClearTo(RgbColor(0, 0, 0));
     if ((response.percent_change_24h) > -5) {
-      strip.setPixelColor(2, strip.Color(255, 0, 0));
-      strip.show();
+      strip.SetPixelColor(2, RgbColor(255, 0, 0));
+      strip.Show();
     }
     else if (((response.percent_change_24h) < -5) && (response.percent_change_24h) > -10) {
-      strip.setPixelColor(2, strip.Color(255, 0, 0));
-      strip.setPixelColor(1, strip.Color(255, 0, 0));
-      strip.show();
+      strip.SetPixelColor(2, RgbColor(255, 0, 0));
+      strip.SetPixelColor(1, RgbColor(255, 0, 0));
+      strip.Show();
     }
     else if ((response.percent_change_24h) < -10) {
-      strip.setPixelColor(2, strip.Color(255, 0, 0));
-      strip.setPixelColor(1, strip.Color(255, 0, 0));
-      strip.setPixelColor(0, strip.Color(255, 0, 0));
-      strip.show();
+      strip.SetPixelColor(2, RgbColor(255, 0, 0));
+      strip.SetPixelColor(1, RgbColor(255, 0, 0));
+      strip.SetPixelColor(0, RgbColor(255, 0, 0));
+      strip.Show();
     }
   }
 
 
 }
-// Fill the dots one after the other with a color
-void colorWipe(uint32_t c, uint8_t wait) {
-  //for(uint16_t i=0; i<strip.numPixels(); i++) {
-  Serial.print(i);
-  strip.setPixelColor(i, c);
-  strip.show();
-  delay(wait);
-  i++;
-  if (i > strip.numPixels()) {
-    strip.clear();
-    i = 0;
-  }
-}
 
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if (WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if (WheelPos < 170) {
-    WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
+
+//// Fill the dots one after the other with a color
+//void colorWipe(uint32_t c, uint8_t wait) {
+//  //for(uint16_t i=0; i<strip.numPixels(); i++) {
+//  Serial.print(i);
+//  strip.SetPixelColor(i, c);
+//  strip.Show();
+//  delay(wait);
+//  i++;
+//  if (i > strip.numPixels()) {
+//    strip.Clear();
+//    i = 0;
+//  }
+//}
+
+//// Input a value 0 to 255 to get a color value.
+//// The colours are a transition r - g - b - back to r.
+//uint32_t Wheel(byte WheelPos) {
+//  WheelPos = 255 - WheelPos;
+//  if (WheelPos < 85) {
+//    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+//  }
+//  if (WheelPos < 170) {
+//    WheelPos -= 85;
+//    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+//  }
+//  WheelPos -= 170;
+//  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+//}
 
