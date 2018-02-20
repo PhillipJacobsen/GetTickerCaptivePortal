@@ -1,96 +1,183 @@
-//ESP8266 Community V2.4 (In Board Manager)
+/********************************************************************************
+    Crypto Monitor
+    GetTickerCaptivePortal.ino
+    2018 @dantasticdan @phillipjacobsen
+
+********************************************************************************/
+
+/********************************************************************************
+               Electronic Hardware Requirements and Pin Connections
+
+    ESP8266 NodeMCU1.0 ESP-12E development module
+      Source:  https://www.amazon.ca/gp/product/B06VV39XD8
+
+      Notes from NODEMCU_DEVKIT_V1.0.PDF
+          On every boot/reset/wakeup, GPIO15 MUST keep LOW, GPIO2 MUST keep HIGH.
+          GPIO0 HIGH ->RUN MODE, LOW -> FLASH MODE.
+          When you need to use the sleep mode,GPIO16 and RST should be connected,
+          and GPIO16 will output LOW to reset the system at the time of wakeup.
+
+      GPIO pin Usage
+          D0/GPIO16 -> Do not use for now. used for sleep mode??? Also connected to Onboard Blue LED(near USB connector). I think we could use this LED if R10 was removed
+          D1/GPIO5  -> OLED SCL
+          D2/GPIO4  -> OLED SDA 
+          D3/GPIO0  -> Do not use for now. Connected to onboard Flash Push Button. Not sure what this does(Maybe used by LUA interpreter)
+          D4/GPIO2  -> Keep low on bootup - also connected to Blue LED on WiFiModule(Near antenna)
+          D5/GPIO14 -> Green LED
+          D6/GPIO12 -> Red LED
+          D7/GPIO13 -> Push Button
+          D8/GPIO15 -> Do not use for now.  Keep low on bootup.  
+          D9/GPIO3  -> NeoPixel Din. Also used for USB serial Rx. I
+          D10/GPIO1 -> used for USB serial Tx. 
+
+      
+
+    0.96 I2C 128x64 OLED display
+      Source:    https://www.amazon.ca/gp/product/B01N78FUH7
+      Pins cannot be remapped when using DMA mode
+      SDA ->NodeMCU D2 pin (GPIO4)
+      SCL ->NodeMCU D1 pin (GPIO5)
+      VCC -> 3.3V
+      GND
+     
+    NeoPixels
+      Note: NeoPixels should really be powered by 5V or 3.7V at a minimum.  
+            When powered by 5V a 3.3V->5V level shifter should be used
+            When powered by 3.7V the 3.3V i/O from ESP8266 is ok
+            
+      Din -> NodeMCU D9 pin (RDX0/GPIO3)
+      VCC -> 3.3V (This is "working" should be 3.7V or 5V with level shifter on Din pin.)
+      GND -> GND     
+
+    Pushbutton
+      NodeMCU D6 pin (GPIO12) (with internal pullup configured)
+      GND
+
+    Onboard Blue LED on NodeMCU dev board
+      ->NodeMCU D2 pin (GPIO4)
+    PIN_LED
+// Onboard LED I/O pin on NodeMCU board
+const int PIN_LED = 2; // D4 on NodeMCU and WeMos. Controls the onboard LED.
+ ********************************************************************************/
+
+
+
+/********************************************************************************
+                              Library Requirements
+********************************************************************************/
+
+/********************************************************************************
+    ESP8266WiFi (ESP8266 Arduino Core) V2.4
+      ARDUINO Board Manager URL:
+        http://arduino.esp8266.com/stable/package_esp8266com_index.json
+        https://github.com/esp8266/Arduino
+********************************************************************************/
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
+//#include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
-#include <DNSServer.h>
+//#include <DNSServer.h>
 #include <ESP8266HTTPClient.h>
-#include <ESP8266mDNS.h>
-#include <EEPROM.h>
-#include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
-
-//------- Install From Library Manager -------
-#include <ArduinoJson.h>
-#include <CoinMarketCapApi.h>
-
-//--------------------------------------------
-#include <NeoPixelBus.h>
-//optimized ESP8266 neopixel library:  https://github.com/Makuna
-//https://github.com/Makuna/NeoPixelBus/wiki/NeoPixelBus-object
-//This library is optimized to use the DMA on the ESP8266 for minimal cup usage. The standard Adafruit library has the potential to interfere with the 
-//WiFi processing done by the low level SDK
-//NeoPixelBus<FEATURE, METHOD> strip(pixelCount, pixelPin);
-// NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(16);
-//On the ESP8266 the Neo800KbpsMethod method will use this underlying method: NeoEsp8266Dma800KbpsMethod 
-//The NeoEsp8266Dma800KbpsMethod is the underlying method that gets used if you use Neo800KbpsMethod on Esp8266 platforms. There should be no need to use it directly.
-//The NeoEsp8266Dma800KbpsMethod only supports the RDX0/GPIO3 pin. The Pin argument is omitted. See other esp8266 methods below if you don't have this pin available.
-//This method uses very little CPU for actually sending the data to NeoPixels but it requires an extra buffer for the DMA to read from. 
-//Thus there is a trade off of CPU use versus memory use. The extra buffer needed is four times the size of the primary pixel buffer.
-// It also requires the use of the RDX0/GPIO3 pin. The normal feature of this pin is the "Serial" receive. 
-//Using this DMA method will not allow you to receive serial from the primary Serial object; but it will not stop you from sending output to the terminal program of a PC
-//Due to the pin overlap, there are a few things to take into consideration.
-//First, when you are flashing the Esp8266, some LED types will react to the flashing and turn on. 
-//This is important if you have longer strips of pixels where the power use of full bright might exceed your design.
-//Second, the NeoPixelBus::Begin() MUST be called after the Serial.begin(). 
-//If they are called out of order, no pixel data will be sent as the Serial reconfigured the RDX0/GPIO3 pin to its needs.
+//#include <ESP8266mDNS.h>
 
 
-//--------------------------------------------
+/********************************************************************************
+   ESP8266 WiFi Connection manager
+     Available through Arduino Library Manager however development is done using lastest Master Branch on Github
+     https://github.com/tzapu/WiFiManager
+********************************************************************************/
+#include "WiFiManager.h"
 
+
+/********************************************************************************
+    U8g2lib Monochrome Graphics Display Library
+      Available through Arduino Library Manager
+      https://github.com/olikraus/u8g2
+      
+    ESP8266 module ->use hardware I2C connections
+      SDA ->NodeMCU D2 pin (GPIO4)
+      SCL ->NodeMCU D1 pin (GPIO5)
+
+    UNO connections -> use hardware I2C connections
+      SDA ->A4
+      SCL ->A5
+    Frame Buffer Examples: clearBuffer/sendBuffer. Fast, but may not work with all Arduino boards because of RAM consumption
+    Page Buffer Examples: firstPage/nextPage. Less RAM usage, should work with all Arduino boards.
+    U8x8 Text Only Example: No RAM usage, direct communication with display controller. No graphics, 8x8 Text only.   
+********************************************************************************/
 #define OLED_DISPLAY
 
 #ifdef OLED_DISPLAY
-//------- OLED display -------
-#include <Arduino.h>
 #include <U8g2lib.h>
 
-
-#ifdef U8X8_HAVE_HW_SPI
-#include <SPI.h>
-#endif
-#ifdef U8X8_HAVE_HW_I2C
-#include <Wire.h>
-#endif
-
-//  UNO connections -> use hardware I2C connections
-//  SDA ->A4
-//  SCL ->A5
-
-//  ESP8266 module ->use hardware I2C connections
-//  SDA ->NodeMCU D2 pin (GPIO4)
-//  SCL ->NodeMCU D1 pin (GPIO5)
-
-/*
-  U8glib  Overview:
-    Frame Buffer Examples: clearBuffer/sendBuffer. Fast, but may not work with all Arduino boards because of RAM consumption
-    Page Buffer Examples: firstPage/nextPage. Less RAM usage, should work with all Arduino boards.
-    U8x8 Text Only Example: No RAM usage, direct communication with display controller. No graphics, 8x8 Text only.
-*/
-
-// U8g2 Contructor List (Frame Buffer)
+// U8g2 Contructor List for Frame Buffer Mode.
+// This uses the Hardware I2C peripheral on ESP8266 with DMA interface
 // The complete list is available here: https://github.com/olikraus/u8g2/wiki/u8g2setupcpp
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 #endif
 
 
+/********************************************************************************
+    Makuna NeoPixel Library - optimized for ESP8266
+      Available through Arduino Library Manager however development is done using lastest Master Branch on Github
+      https://github.com/Makuna/NeoPixelBus/
+
+      This library is optimized to use the DMA on the ESP8266 for minimal cup usage. The standard Adafruit library has the potential to interfere with the
+      WiFi processing done by the low level SDK
+      NeoPixelBus<FEATURE, METHOD> strip(pixelCount, pixelPin);
+       NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(16);
+      On the ESP8266 the Neo800KbpsMethod method will use this underlying method: NeoEsp8266Dma800KbpsMethod
+      The NeoEsp8266Dma800KbpsMethod is the underlying method that gets used if you use Neo800KbpsMethod on Esp8266 platforms. There should be no need to use it directly.
+      The NeoEsp8266Dma800KbpsMethod only supports the RDX0/GPIO3 pin. The Pin argument is omitted. See other esp8266 methods below if you don't have this pin available.
+      This method uses very little CPU for actually sending the data to NeoPixels but it requires an extra buffer for the DMA to read from.
+      Thus there is a trade off of CPU use versus memory use. The extra buffer needed is four times the size of the primary pixel buffer.
+       It also requires the use of the RDX0/GPIO3 pin. The normal feature of this pin is the "Serial" receive.
+      Using this DMA method will not allow you to receive serial from the primary Serial object; but it will not stop you from sending output to the terminal program of a PC
+      Due to the pin overlap, there are a few things to take into consideration.
+      First, when you are flashing the Esp8266, some LED types will react to the flashing and turn on.
+      This is important if you have longer strips of pixels where the power use of full bright might exceed your design.
+      Second, the NeoPixelBus::Begin() MUST be called after the Serial.begin().
+      If they are called out of order, no pixel data will be sent as the Serial reconfigured the RDX0/GPIO3 pin to its needs.
+********************************************************************************/
+#include <NeoPixelBus.h>
+
+/********************************************************************************
+    CoinMarketCap
+   Install From Library Manager
+   
+********************************************************************************/
+#include <CoinMarketCapApi.h>
+
+
+/********************************************************************************
+    Various other libraries
+      Install From Library Manager
+********************************************************************************/
+#include <ArduinoJson.h>
+#include <EEPROM.h>
+
+
+
 
 //--------------------------------------------
-//#define PixelPin 9            //Neopixel Data Pin  [ESP8266 - GPIO9] (
+//#define PixelPin 9        //Neopixel Data Pin  [ESP8266 - GPIO9] - cannot map DMA interface to any other pin.
 #define PixelCount 16       //Length of Neopixel Strand
-
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount);  //default on ESP8266 is to use the D9(GPIO3,RXD0) pin with DMA.
 
 // LED Definitions
-const int LED_GREEN = 16; //ESP8266 - GPIO16
-const int LED_RED = 0;    //ESP8266 - GPIO5
-const int LED_BLUE = 2;   //ESP8266 - GPIO4
+const int LED_GREEN = 14;  //  D5/GPIO14 
+const int LED_RED = 12;    //  D6/GPIO12
+//const int LED_BLUE = 2;       
+const int LED_MODULE = 2; // Controls the onboard blue LED(Near antenna).
+
+
+//  select wich pin will trigger the configuration portal when set to LOW
+//  Push Button needs to be connected to this pin. It must be a momentary connection
+//  not connected permanently to ground.
+const int TRIGGER_PIN = 13; // D7/GPIO13
+
 int i, j = 0;
-
-
-// Onboard LED I/O pin on NodeMCU board
-const int PIN_LED = 2; // D4 on NodeMCU and WeMos. Controls the onboard LED.
-
 
 /* Don't set this wifi credentials. They are configurated at runtime and stored on EEPROM */
 char ssid[32] = "";
@@ -124,10 +211,7 @@ WiFiClientSecure client;
 CoinMarketCapApi api(client);
 HTTPClient http;
 
-//  select wich pin will trigger the configuration portal when set to LOW
-//  Needs to be connected to a button to use this pin. It must be a momentary connection
-//  not connected permanently to ground.
-const int TRIGGER_PIN = 13; // D7 on NodeMCU
+
 
 // Indicates whether ESP has WiFi credentials saved from previous session
 bool initialConfig = false;
@@ -153,24 +237,25 @@ void setup() {
   //https://community.blynk.cc/t/solved-esp8266-nodemcu-v1-0-and-wdt-resets/7047/11
   //ESP.wdtDisable();
   //ESP.wdtEnable(WDTO_8S);
-//  delay(2);    //feed watchdog
+  //  delay(2);    //feed watchdog
 
   // initialize the on board LED digital pin as an output.
   // This pin is used to indicated AP configuration mode
-  pinMode(PIN_LED, OUTPUT);
+  pinMode(LED_MODULE, OUTPUT);
 
   pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_BLUE, OUTPUT);
+//  pinMode(LED_BLUE, OUTPUT);
   pinMode(LED_RED, OUTPUT);
 
   Serial.begin(115200);
   Serial.println("\n Starting");
-  
+
   //configure NeoPixels
   strip.Begin();
   strip.Show(); // Initialize all pixels to 'off'
 
   WiFi.printDiag(Serial); //Remove this line if you do not want to see WiFi password printed
+
 
   //If there is no stored SSID then set flag so we can startup in AP mode to configure the wifi login paramaters. The ESP8266 low level SDK stores the SSID in a reserved part of memory.
   if (WiFi.SSID() == "") {
@@ -180,7 +265,7 @@ void setup() {
 
   //there is stored SSID so try to connect to saved WiFi network
   else {
-    digitalWrite(PIN_LED, HIGH); // Turn led off as we are not in configuration mode.
+    digitalWrite(LED_MODULE, HIGH); // Turn led off as we are not in configuration mode.
     WiFi.mode(WIFI_STA); // Force to station mode because if device was switched off while in access point mode it will start up next time in access point mode.
     unsigned long startedAt = millis();     //time that we began the wifi connection attempt
     Serial.print("After waiting ");
@@ -240,7 +325,7 @@ void loop() {
   // is configuration portal requested by push button
   if (digitalRead(TRIGGER_PIN) == LOW) {
     Serial.println("Configuration portal requested by button press");
-    digitalWrite(PIN_LED, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+    digitalWrite(LED_MODULE, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
     WiFiManager wifiManager;
     //reset settings - for testing (this clears the ssid stored in eeprom by the esp8266 ssd. not sure what else it does.
     wifiManager.resetSettings();
@@ -254,7 +339,7 @@ void loop() {
   // is configuration portal requested by blank SSID
   if ((initialConfig)) {
     Serial.println("Configuration portal requested by blank SSID");
-    digitalWrite(PIN_LED, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+    digitalWrite(LED_MODULE, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
     //Local intialization. Once its business is done, there is no need to keep it around
 
     WiFiManager wifiManager;
@@ -276,7 +361,7 @@ void loop() {
       //if you get here you have connected to the WiFi
       Serial.println("connected...yeey :)");
     }
-    digitalWrite(PIN_LED, HIGH); // Turn led off as we are not in configuration mode.
+    digitalWrite(LED_MODULE, HIGH); // Turn led off as we are not in configuration mode.
 
     ESP.restart();
     //   ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
@@ -358,7 +443,7 @@ void printTickerData(String ticker) {
     //u8g2.begin();
     //loadCredentials();
     u8g2.clearBuffer();          // clear the internal memory, requires sendBuffer
- //   u8g2.sendBuffer();          // transfer internal memory to the display
+    //   u8g2.sendBuffer();          // transfer internal memory to the display
 
     //     u8g2.drawStr(0,30,"hello");  // write something to the internal memory
     //u8g2.clearBuffer();
@@ -404,7 +489,7 @@ void printTickerData(String ticker) {
 
     //Serial.print("updating display!!!!!!!!!!!!!!!!!!!!!");
     //  delay(250);
- //   ESP.wdtFeed();
+    //   ESP.wdtFeed();
 
 
 #endif
@@ -429,18 +514,18 @@ void printTickerData(String ticker) {
     strip.ClearTo(RgbColor(0, 0, 0));
 
     if ((response.percent_change_24h) < 5) {
-      strip.SetPixelColor(3, RgbColor (0, 255, 0));
+      strip.SetPixelColor(3, RgbColor (0, 100, 0));
       strip.Show();
     }
     else if (((response.percent_change_24h) > 5) && (response.percent_change_24h) < 10) {
-      strip.SetPixelColor(3, RgbColor (0, 255, 0));
-      strip.SetPixelColor(4, RgbColor (0, 255, 0));
+      strip.SetPixelColor(3, RgbColor (0, 100, 0));
+      strip.SetPixelColor(4, RgbColor (0, 100, 0));
       strip.Show();
     }
     else if ((response.percent_change_24h) > 10) {
-      strip.SetPixelColor(3, RgbColor(0, 255, 0));
-      strip.SetPixelColor(4, RgbColor(0, 255, 0));
-      strip.SetPixelColor(5, RgbColor(0, 255, 0));
+      strip.SetPixelColor(3, RgbColor(0, 100, 0));
+      strip.SetPixelColor(4, RgbColor(0, 100, 0));
+      strip.SetPixelColor(5, RgbColor(0, 100, 0));
       strip.Show();
     }
   }
@@ -450,21 +535,21 @@ void printTickerData(String ticker) {
   else if ((response.percent_change_24h) < 0) {
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_RED, LOW);
-   // strip.clear();
+    // strip.clear();
     strip.ClearTo(RgbColor(0, 0, 0));
     if ((response.percent_change_24h) > -5) {
-      strip.SetPixelColor(2, RgbColor(255, 0, 0));
+      strip.SetPixelColor(2, RgbColor(100, 0, 0));
       strip.Show();
     }
     else if (((response.percent_change_24h) < -5) && (response.percent_change_24h) > -10) {
-      strip.SetPixelColor(2, RgbColor(255, 0, 0));
-      strip.SetPixelColor(1, RgbColor(255, 0, 0));
+      strip.SetPixelColor(2, RgbColor(100, 0, 0));
+      strip.SetPixelColor(1, RgbColor(100, 0, 0));
       strip.Show();
     }
     else if ((response.percent_change_24h) < -10) {
-      strip.SetPixelColor(2, RgbColor(255, 0, 0));
-      strip.SetPixelColor(1, RgbColor(255, 0, 0));
-      strip.SetPixelColor(0, RgbColor(255, 0, 0));
+      strip.SetPixelColor(2, RgbColor(100, 0, 0));
+      strip.SetPixelColor(1, RgbColor(100, 0, 0));
+      strip.SetPixelColor(0, RgbColor(100, 0, 0));
       strip.Show();
     }
   }
@@ -487,18 +572,13 @@ void printTickerData(String ticker) {
 //  }
 //}
 
-//// Input a value 0 to 255 to get a color value.
-//// The colours are a transition r - g - b - back to r.
-//uint32_t Wheel(byte WheelPos) {
-//  WheelPos = 255 - WheelPos;
-//  if (WheelPos < 85) {
-//    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-//  }
-//  if (WheelPos < 170) {
-//    WheelPos -= 85;
-//    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-//  }
-//  WheelPos -= 170;
-//  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-//}
+
+
+void clearStrip() {
+  for ( int i = 0; i < PixelCount; i++) {
+    strip.SetPixelColor(i, 0x000000); strip.Show();
+  }
+}
+
+
 
