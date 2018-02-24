@@ -294,25 +294,43 @@ void setup() {
     WiFi.mode(WIFI_STA);                  // Force to station mode because if device was switched off while in access point mode it will start up next time in access point mode.
     unsigned long startedAt = millis();   //time that we began the wifi connection attempt
 
-    Serial.print("After waiting ");
+    Serial.print("looking for WiFi network ");
 
 
     //    int connRes = WiFi.waitForConnectResult();     //There seems to be a built in timeout of around 6.3 seconds
 
-    //while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    // Serial.println("Connection Failed! Rebooting...");
-    // delay(5000);
-    // ESP.restart();
-    // }
+    //method #1 to wait for connection
+    //    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    //      Serial.println("Connection Failed! Rebooting...");
+    //      ESP.restart();
+    //      delay(5000);
+    //   }
 
-
+    //method #2 to wait for connection
     while (WiFi.status() != WL_CONNECTED) {
       delay(500);
       Serial.print(".");
+      //it will hang here forever if there is no connection
+
+      //=================================================================
+      // Is configuration portal requested by push button?
+      // If button is pushed then the SSID is erased and processor is reset so it can startup Captive Portal
+      if (digitalRead(TRIGGER_PIN) == LOW) {
+        Serial.println("Configuration portal requested by button press");
+        digitalWrite(LED_MODULE, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+
+        WiFi.disconnect();    //erases SSID/Password stored in Flash
+          ESP.restart(); //restart may be better then reset. not really sure all the reasons.
+        //ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
+        delay(1000);   //I don't know why this delay is needed here. Perhaps it has something to do with the RTOS and giving it time to process....
+      }
+      //=================================================================
+
     }
 
     int connRes = WiFi.status();
 
+    Serial.print("After waiting ");
     float waited = (millis() - startedAt);
     Serial.print(waited / 1000);
     Serial.print(" secs in setup() connection result is ");
@@ -342,7 +360,6 @@ void setup() {
       u8g2.setCursor(0, 60);
       u8g2.print(WiFi.localIP());             // display IP address of webserver
       u8g2.sendBuffer();                      // transfer internal memory to the display
-      delay(750);
 #endif
 
       /* Setup web pages: root, wifi config pages, SO captive portal detectors and not found. */
@@ -366,6 +383,8 @@ void setup() {
       //      u8g2.sendBuffer();                // transfer internal memory to the display
       //#endif
 
+
+      delay(1000);     //delay here for a while to show the IP address on the OLED before advancing to the next screen
     }
 
   }
@@ -380,23 +399,9 @@ void setup() {
 ********************************************************************************/
 void loop() {
 
-//I am trying to figure out a reconnect loop. This is not working, however I think something is getting stuck in coinmarket cap api.
-//https://github.com/esp8266/Arduino/blob/master/doc/esp8266wifi/station-class.rst#waitforconnectresult
-  if   (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Disconnected!!!!!!!");
-    WiFi.setAutoReconnect(true);
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(1);     //give RTOS some bandwidth
-      ESP.wdtFeed();
-    }
-    Serial.println("reconnected!!!!!!!");
-  }
-
-  //  ESP.wdtFeed();    //feed watchdog
-
   //=================================================================
   // is configuration portal requested by blank SSID ?
-  // 
+  //
   if ((!SSID_Available)) {
     Serial.println("Captive Portal requested by blank SSID");
 
@@ -444,6 +449,7 @@ void loop() {
     digitalWrite(LED_MODULE, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
 
     WiFi.disconnect();    //erases SSID/Password stored in Flash
+    delay(1000);
     // So with persistent(true) Wifi.disconnect ERASES the SSID and password
     //With persistent(false) Wifi.disconnect doesn't erase anything.
     //https://github.com/tzapu/WiFiManager/issues/142
@@ -454,89 +460,163 @@ void loop() {
   //=================================================================
 
 
+  //=================================================================
+  //check for disconnect
+  //I am trying to figure out a reconnect loop. This is not working, however I think something is getting stuck in coinmarket cap api.
+  //https://github.com/esp8266/Arduino/blob/master/doc/esp8266wifi/station-class.rst#waitforconnectresult
 
+  /*
+    if   (WiFi.status() != WL_CONNECTED) {
+      Serial.println("Disconnected!!!!!!!");
+      WiFi.setAutoReconnect(true);
+      while (WiFi.status() != WL_CONNECTED) {
+        delay(1);     //give RTOS some bandwidth
+        ESP.wdtFeed();
+      }
+      Serial.println("reconnected!!!!!!!");
+    }
+  */
+  //  ESP.wdtFeed();    //feed watchdog
+  //=================================================================
 
 
 
   server.handleClient();
 
-
   unsigned long timeNow = millis();
-  if ((timeNow > api_due_time))  {
- 
-CMCTickerResponse response = api.GetTickerInfo(coinname);
 
-  printTickerData(coinname,&response);
-//  printTickerData(coinname);
+  //=================================================================
+  // retrieve coin price from Coinmarketcap API
+  if ((timeNow > api_due_time))  {
+
+    //=================================================================
+    // retrieve coin price from Coinmarketcap API
+    Serial.println("---------------------------------");
+    Serial.print("Getting ticker data for ");
+    Serial.println(coinname);
+    //When the wifi networks goes away I think api.GetTickerInfo(ticker); gets stuck.
+    //I keep getting a stack dump regardless of any of the wdt disable code below.
+    ESP.wdtFeed();   //resets software and hardware watchdogs
+    //  ESP.wdtDisable();      //disable software watchdog. Hardware watchdog is still going. (Maybe set to 6 seconds??)
+    delay(2);    //give RTOS some bandwidth
+
+    //this api seems to have a timeout of 1500m????????
+    CMCTickerResponse response = api.GetTickerInfo(coinname);
+
+    //  CMCTickerResponse response = api.GetTickerInfo(ticker);
+    //  delay(1);    //give RTOS some bandwidth
+    ESP.wdtFeed();   //resets software and hardware watchdogs
+    //ESP.wdtEnable(1000);    //an integer value needs to be passed as input argument however the SDK may not use this value.
+    //  ESP.wdtEnable(8000);
+    //=================================================================
+
+    //=================================================================
+    // get bitcoin balance from address
+    getBitcoinBalance();
+
+    //=================================================================
+    // update displays
+    printTickerData(coinname, &response);
+    updateOLED(coinname, &response);
+    updateNeoPixels(&response);
 
     api_due_time = timeNow + api_mtbs;
+  }
+
+}
 
 
-
-
-    //Blockchain.info http GET
-    String url;
-    url = "http://blockchain.info/q/addressbalance/";
-    url += address;
-    Serial.println(url);
-    // http.begin( "http://blockchain.info/q/getdifficulty");
-    http.begin(url);
-    int httpCode = http.GET();
-    delay(2);    //feed watchdog
-    // httpCode will be negative on error
-    if (httpCode > 0) {
-      // HTTP header has been send and Server response header has been handled
-      //USE_SERIAL.printf("[HTTP] GET... code: %d\n", httpCode);
-      if (httpCode == HTTP_CODE_OK) {
-        String payload = http.getString();
-        balance = ((payload.toFloat()) / 100000000); //satoshi to BTC
-        if (balance > 0) {
-          Serial.println(balance, 8);
-        }
-        else {
-          Serial.println("no address entered");
-        }
+/********************************************************************************
+                              Get Bitcoin Balance from Address
+********************************************************************************/
+void getBitcoinBalance() {
+  //Blockchain.info http GET
+  String url;
+  url = "http://blockchain.info/q/addressbalance/";
+  url += address;
+  Serial.println(url);
+  // http.begin( "http://blockchain.info/q/getdifficulty");
+  http.begin(url);
+  int httpCode = http.GET();
+  delay(2);    //feed watchdog
+  // httpCode will be negative on error
+  if (httpCode > 0) {
+    // HTTP header has been send and Server response header has been handled
+    //USE_SERIAL.printf("[HTTP] GET... code: %d\n", httpCode);
+    if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      balance = ((payload.toFloat()) / 100000000); //satoshi to BTC
+      if (balance > 0) {
+        Serial.println(balance, 8);
       }
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      else {
+        Serial.println("no address entered");
+      }
     }
+  } else {
+    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
   }
 }
 
 
+/********************************************************************************
+                              Update NeoPixels
+********************************************************************************/
+void updateNeoPixels(CMCTickerResponse * response) {
+
+  if ((response->percent_change_24h) > 0) {
+    digitalWrite(LED_GREEN, LOW); //Green active low
+    digitalWrite(LED_RED, HIGH);
+    //strip.clear();
+    strip.ClearTo(RgbColor(0, 0, 0));
+
+    if ((response->percent_change_24h) < 5) {
+      strip.SetPixelColor(3, RgbColor (0, 100, 0));
+      strip.Show();
+    }
+    else if (((response->percent_change_24h) > 5) && (response->percent_change_24h) < 10) {
+      strip.SetPixelColor(3, RgbColor (0, 100, 0));
+      strip.SetPixelColor(4, RgbColor (0, 100, 0));
+      strip.Show();
+    }
+    else if ((response->percent_change_24h) > 10) {
+      strip.SetPixelColor(3, RgbColor(0, 100, 0));
+      strip.SetPixelColor(4, RgbColor(0, 100, 0));
+      strip.SetPixelColor(5, RgbColor(0, 100, 0));
+      strip.Show();
+    }
+  }
 
 
-//void printTickerData(String ticker) {
-void printTickerData(String ticker, CMCTickerResponse *response) {
-  
-  Serial.println("---------------------------------");
-  Serial.println("Getting ticker data for " + ticker);
+  else if ((response->percent_change_24h) < 0) {
+    digitalWrite(LED_GREEN, HIGH);
+    digitalWrite(LED_RED, LOW);
+    // strip.clear();
+    strip.ClearTo(RgbColor(0, 0, 0));
+    if ((response->percent_change_24h) > -5) {
+      strip.SetPixelColor(2, RgbColor(100, 0, 0));
+      strip.Show();
+    }
+    else if (((response->percent_change_24h) < -5) && (response->percent_change_24h) > -10) {
+      strip.SetPixelColor(2, RgbColor(100, 0, 0));
+      strip.SetPixelColor(1, RgbColor(100, 0, 0));
+      strip.Show();
+    }
+    else if ((response->percent_change_24h) < -10) {
+      strip.SetPixelColor(2, RgbColor(100, 0, 0));
+      strip.SetPixelColor(1, RgbColor(100, 0, 0));
+      strip.SetPixelColor(0, RgbColor(100, 0, 0));
+      strip.Show();
+    }
+  }
 
- //When the wifi networks goes away I think api.GetTickerInfo(ticker); gets stuck.
- //I keep getting a stack dump regardless of any of the wdt disable code below.
- ESP.wdtFeed();   //resets software and hardware watchdogs
- ESP.wdtDisable();      //disable software watchdog. Hardware watchdog is still going. (Maybe set to 6 seconds??)
- delay(1);    //give RTOS some bandwidth
- 
-//this api seems to have a timeout of 1500m????????
+}
 
-//  CMCTickerResponse response = api.GetTickerInfo(ticker);
-     delay(1);    //give RTOS some bandwidth 
-     ESP.wdtFeed();   //resets software and hardware watchdogs
-//ESP.wdtEnable(1000);    //an integer value needs to be passed as input argument however the SDK may not use this value.
-     ESP.wdtEnable(8000);
-
-  
+/********************************************************************************
+                              Update 128x64 OLED
+********************************************************************************/
+void updateOLED(String ticker, CMCTickerResponse * response) {
   if (response->error == "") {
-    Serial.print("Name: ");
-    Serial.println(response->name);
-    Serial.print("Symbol: ");
-    Serial.println(response->symbol);
-    Serial.print("Price in USD: ");
-    Serial.println(response->price_usd);
-
-#ifdef OLED_DISPLAY
-
     //u8g2.begin();
     //loadCredentials();
     u8g2.clearBuffer();          // clear the internal memory, requires sendBuffer
@@ -568,13 +648,11 @@ void printTickerData(String ticker, CMCTickerResponse *response) {
     u8g2.setCursor(47, 45);
     u8g2.print(response->percent_change_24h);
 
-
     u8g2.setCursor(100, 30);
     u8g2.print("7d");
 
     u8g2.setCursor(90, 45);
     u8g2.print(response->percent_change_7d);
-
 
 
     u8g2.setCursor(0, 60);
@@ -588,69 +666,36 @@ void printTickerData(String ticker, CMCTickerResponse *response) {
     //  delay(250);
     //   ESP.wdtFeed();
 
+  } else {
 
-#endif
+  }
+}
+
+
+
+/********************************************************************************
+                              send Ticker data to terminal
+********************************************************************************/
+void printTickerData(String ticker, CMCTickerResponse * response) {
+  if (response->error == "") {
+    Serial.print("Name: ");
+    Serial.println(response->name);
+    Serial.print("Symbol: ");
+    Serial.println(response->symbol);
+    Serial.print("Price in USD: ");
+    Serial.println(response->price_usd);
     Serial.print("Percent Change 24h: ");
     Serial.println(response->percent_change_24h);
     Serial.print("Last Updated: ");
     Serial.println(response->last_updated);
 
   } else {
+
     Serial.print("Error getting data: ");
     Serial.println(response->error);
   }
+
   Serial.println("---------------------------------");
-
-
-
-
-  if ((response->percent_change_24h) > 0) {
-    digitalWrite(LED_GREEN, LOW); //Green active low
-    digitalWrite(LED_RED, HIGH);
-    //strip.clear();
-    strip.ClearTo(RgbColor(0, 0, 0));
-
-    if ((response->percent_change_24h) < 5) {
-      strip.SetPixelColor(3, RgbColor (0, 100, 0));
-      strip.Show();
-    }
-    else if (((response->percent_change_24h) > 5) && (response->percent_change_24h) < 10) {
-      strip.SetPixelColor(3, RgbColor (0, 100, 0));
-      strip.SetPixelColor(4, RgbColor (0, 100, 0));
-      strip.Show();
-    }
-    else if ((response->percent_change_24h) > 10) {
-      strip.SetPixelColor(3, RgbColor(0, 100, 0));
-      strip.SetPixelColor(4, RgbColor(0, 100, 0));
-      strip.SetPixelColor(5, RgbColor(0, 100, 0));
-      strip.Show();
-    }
-  }
-
-
-
-  else if ((response->percent_change_24h) < 0) {
-    digitalWrite(LED_GREEN, HIGH);
-    digitalWrite(LED_RED, LOW);
-    // strip.clear();
-    strip.ClearTo(RgbColor(0, 0, 0));
-    if ((response->percent_change_24h) > -5) {
-      strip.SetPixelColor(2, RgbColor(100, 0, 0));
-      strip.Show();
-    }
-    else if (((response->percent_change_24h) < -5) && (response->percent_change_24h) > -10) {
-      strip.SetPixelColor(2, RgbColor(100, 0, 0));
-      strip.SetPixelColor(1, RgbColor(100, 0, 0));
-      strip.Show();
-    }
-    else if ((response->percent_change_24h) < -10) {
-      strip.SetPixelColor(2, RgbColor(100, 0, 0));
-      strip.SetPixelColor(1, RgbColor(100, 0, 0));
-      strip.SetPixelColor(0, RgbColor(100, 0, 0));
-      strip.Show();
-    }
-  }
-
 
 }
 
