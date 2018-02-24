@@ -320,7 +320,8 @@ void setup() {
         digitalWrite(LED_MODULE, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
 
         WiFi.disconnect();    //erases SSID/Password stored in Flash
-          ESP.restart(); //restart may be better then reset. not really sure all the reasons.
+        delay(1000); //If I remove this delay and then quickly press the button the processor will reset however it doesn't seem to erase the SSID. I assume the RTOS needs to run a bit in order to process.
+        ESP.restart(); //restart may be better then reset. not really sure all the reasons.
         //ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
         delay(1000);   //I don't know why this delay is needed here. Perhaps it has something to do with the RTOS and giving it time to process....
       }
@@ -449,7 +450,7 @@ void loop() {
     digitalWrite(LED_MODULE, LOW); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
 
     WiFi.disconnect();    //erases SSID/Password stored in Flash
-    delay(1000);
+    delay(1000); //If I remove this delay and then quickly press the button the processor will reset however it doesn't seem to erase the SSID. I assume the RTOS needs to run a bit in order to process.
     // So with persistent(true) Wifi.disconnect ERASES the SSID and password
     //With persistent(false) Wifi.disconnect doesn't erase anything.
     //https://github.com/tzapu/WiFiManager/issues/142
