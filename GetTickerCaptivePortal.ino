@@ -396,6 +396,7 @@ void loop() {
 
   //=================================================================
   // is configuration portal requested by blank SSID ?
+  // 
   if ((!SSID_Available)) {
     Serial.println("Captive Portal requested by blank SSID");
 
@@ -448,7 +449,7 @@ void loop() {
     //https://github.com/tzapu/WiFiManager/issues/142
     ESP.restart(); //restart may be better then reset. not really sure all the reasons.
     //ESP.reset(); // This is a bit crude. For some unknown reason webserver can only be started once per boot up
-    delay(1000);   //I don't know why this delay is needed. Perhaps it has something to do with the RTOS and giving it time to process
+    delay(1000);   //I don't know why this delay is needed here. Perhaps it has something to do with the RTOS and giving it time to process....
   }
   //=================================================================
 
@@ -462,11 +463,11 @@ void loop() {
 
   unsigned long timeNow = millis();
   if ((timeNow > api_due_time))  {
-
-
-
  
-    printTickerData(coinname);
+CMCTickerResponse response = api.GetTickerInfo(coinname);
+
+  printTickerData(coinname,&response);
+//  printTickerData(coinname);
 
     api_due_time = timeNow + api_mtbs;
 
@@ -502,7 +503,12 @@ void loop() {
   }
 }
 
-void printTickerData(String ticker) {
+
+
+
+//void printTickerData(String ticker) {
+void printTickerData(String ticker, CMCTickerResponse *response) {
+  
   Serial.println("---------------------------------");
   Serial.println("Getting ticker data for " + ticker);
 
@@ -513,20 +519,21 @@ void printTickerData(String ticker) {
  delay(1);    //give RTOS some bandwidth
  
 //this api seems to have a timeout of 1500m????????
-  CMCTickerResponse response = api.GetTickerInfo(ticker);
+
+//  CMCTickerResponse response = api.GetTickerInfo(ticker);
      delay(1);    //give RTOS some bandwidth 
      ESP.wdtFeed();   //resets software and hardware watchdogs
 //ESP.wdtEnable(1000);    //an integer value needs to be passed as input argument however the SDK may not use this value.
      ESP.wdtEnable(8000);
 
   
-  if (response.error == "") {
+  if (response->error == "") {
     Serial.print("Name: ");
-    Serial.println(response.name);
+    Serial.println(response->name);
     Serial.print("Symbol: ");
-    Serial.println(response.symbol);
+    Serial.println(response->symbol);
     Serial.print("Price in USD: ");
-    Serial.println(response.price_usd);
+    Serial.println(response->price_usd);
 
 #ifdef OLED_DISPLAY
 
@@ -545,7 +552,7 @@ void printTickerData(String ticker) {
     u8g2.print(ticker);
 
     u8g2.setCursor(65, 12);
-    u8g2.print(response.price_usd);
+    u8g2.print(response->price_usd);
 
 
     u8g2.setFont(u8g2_font_ncenB10_tr );  // 11 pixel height
@@ -553,20 +560,20 @@ void printTickerData(String ticker) {
     u8g2.print("1hr");
 
     u8g2.setCursor(0, 45);
-    u8g2.print(response.percent_change_1h);
+    u8g2.print(response->percent_change_1h);
 
     u8g2.setCursor(47, 30);
     u8g2.print("24hr");
 
     u8g2.setCursor(47, 45);
-    u8g2.print(response.percent_change_24h);
+    u8g2.print(response->percent_change_24h);
 
 
     u8g2.setCursor(100, 30);
     u8g2.print("7d");
 
     u8g2.setCursor(90, 45);
-    u8g2.print(response.percent_change_7d);
+    u8g2.print(response->percent_change_7d);
 
 
 
@@ -574,7 +581,7 @@ void printTickerData(String ticker) {
     u8g2.print("balance: ");
     //   u8g2.setCursor(0, 60);
     //  u8g2.print(balance,3);    //display bitcoin balance in address
-    u8g2.print(balance * response.price_usd, 3); //display USD value in bitcoin address
+    u8g2.print(balance * response->price_usd, 3); //display USD value in bitcoin address
     u8g2.sendBuffer();          // transfer internal memory to the display
 
     //Serial.print("updating display!!!!!!!!!!!!!!!!!!!!!");
@@ -584,35 +591,35 @@ void printTickerData(String ticker) {
 
 #endif
     Serial.print("Percent Change 24h: ");
-    Serial.println(response.percent_change_24h);
+    Serial.println(response->percent_change_24h);
     Serial.print("Last Updated: ");
-    Serial.println(response.last_updated);
+    Serial.println(response->last_updated);
 
   } else {
     Serial.print("Error getting data: ");
-    Serial.println(response.error);
+    Serial.println(response->error);
   }
   Serial.println("---------------------------------");
 
 
 
 
-  if ((response.percent_change_24h) > 0) {
+  if ((response->percent_change_24h) > 0) {
     digitalWrite(LED_GREEN, LOW); //Green active low
     digitalWrite(LED_RED, HIGH);
     //strip.clear();
     strip.ClearTo(RgbColor(0, 0, 0));
 
-    if ((response.percent_change_24h) < 5) {
+    if ((response->percent_change_24h) < 5) {
       strip.SetPixelColor(3, RgbColor (0, 100, 0));
       strip.Show();
     }
-    else if (((response.percent_change_24h) > 5) && (response.percent_change_24h) < 10) {
+    else if (((response->percent_change_24h) > 5) && (response->percent_change_24h) < 10) {
       strip.SetPixelColor(3, RgbColor (0, 100, 0));
       strip.SetPixelColor(4, RgbColor (0, 100, 0));
       strip.Show();
     }
-    else if ((response.percent_change_24h) > 10) {
+    else if ((response->percent_change_24h) > 10) {
       strip.SetPixelColor(3, RgbColor(0, 100, 0));
       strip.SetPixelColor(4, RgbColor(0, 100, 0));
       strip.SetPixelColor(5, RgbColor(0, 100, 0));
@@ -622,21 +629,21 @@ void printTickerData(String ticker) {
 
 
 
-  else if ((response.percent_change_24h) < 0) {
+  else if ((response->percent_change_24h) < 0) {
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_RED, LOW);
     // strip.clear();
     strip.ClearTo(RgbColor(0, 0, 0));
-    if ((response.percent_change_24h) > -5) {
+    if ((response->percent_change_24h) > -5) {
       strip.SetPixelColor(2, RgbColor(100, 0, 0));
       strip.Show();
     }
-    else if (((response.percent_change_24h) < -5) && (response.percent_change_24h) > -10) {
+    else if (((response->percent_change_24h) < -5) && (response->percent_change_24h) > -10) {
       strip.SetPixelColor(2, RgbColor(100, 0, 0));
       strip.SetPixelColor(1, RgbColor(100, 0, 0));
       strip.Show();
     }
-    else if ((response.percent_change_24h) < -10) {
+    else if ((response->percent_change_24h) < -10) {
       strip.SetPixelColor(2, RgbColor(100, 0, 0));
       strip.SetPixelColor(1, RgbColor(100, 0, 0));
       strip.SetPixelColor(0, RgbColor(100, 0, 0));

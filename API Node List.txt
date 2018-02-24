@@ -1,0 +1,69 @@
+API HTTP Endpoints to get account balance for various cryptos.
+
+LISK
+API:  https://lisk.io/documentation?i=lisk-docs/APIReference
+Peer Explorer: https://explorer.lisk.io/networkMonitor
+Not sure how to use Peer explorer to find a node running the API
+I found API node using Nano Desktop Wallet
+
+Get Balance Example:
+GET /api/accounts/getBalance?address=<address>
+https://node08.lisk.io/api/accounts/getBalance?address=11710748994570411033L
+
+
+WAVES
+API:  https://github.com/wavesplatform/Waves/wiki/Waves-Node-REST-API#get-addressesbalanceaddress
+http://dev.pywaves.org/generators/
+
+Get Balance Example:
+GET /addresses/balance/{address}
+https://nodes.wavesnodes.com/addresses/balance/3PBBkXdaeVWaVoDSGUMgPaG3T5rcQLL2AeJ
+
+
+Decred
+API: https://github.com/dcrdata/dcrdata
+Block Explorer https://mainnet.decred.org/
+It seems they are using this open source explorer and API
+https://github.com/bitpay/insight-api
+
+Get Balance Example 
+GET /insight-api/addr/[:addr]/balance
+
+
+Cardano
+API:  https://cardanodocs.com/technical/wallet/api/
+
+Stellar
+API:  https://www.stellar.org/developers/horizon/reference/index.html
+
+IOTA
+API: https://github.com/iotaledger/iota.lib.js/blob/master/lib/api/apiCommands.js#L48
+https://iota.readme.io/reference
+
+NODE: https://nodes.iota.cafe:443
+
+
+ripple
+API:  https://github.com/Blizzard-/ripple-gateway/blob/master/doc/api.md#get-apiv1balances
+
+Get Balance Example
+GET /api/v1/balances
+
+
+
+
+NEO
+API:  http://docs.neo.org/en-us/node/api.html
+
+
+
+ERC20 tokens lookup?
+https://tokenbalance.com/coins
+https://github.com/hunterlong/tokenbalance
+
+
+
+
+
+
+
