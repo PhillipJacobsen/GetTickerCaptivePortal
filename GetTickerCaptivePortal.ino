@@ -68,12 +68,25 @@
 
     Green External LED
       D5 pin (GPIO14)
-
+  EEPROM.begin(size)
     Red External LED
       D6 pin (GPIO12)
 
  ********************************************************************************/
 
+/********************************************************************************
+   Programming Notes.........
+  Yielding
+  This is one of the most critical differences between the ESP8266 and a more classical Arduino microcontroller. The ESP8266 runs a lot of utility functions in the background – keeping WiFi connected, managing the TCP/IP stack, and performing other duties. Blocking these functions from running can cause the ESP8266 to crash and reset itself. To avoid these mysterious resets, avoid long, blocking loops in your sketch.
+  If you have a long loop in your sketch, you can add a delay([milliseconds]) call within, to allow the critical background functions to execute. The ESP8266’s delay() funciton, while of course delaying for a set number of milliseconds, also makes a quick call to the background functions.
+  The amazing creators of the ESP8266 Arduino libraries also implemented a yield() function, which calls on the background functions to allow them to do their thing. As an example, if your sketch is waiting for someone to press a button attached to pin 12, creating a loop like this will keep the ESP8266 from crashing:
+  Delay calls yield until such time as the delay has expired and then returns to the delay() calling function.
+
+  Long story short: if you need timed callbacks, stay away from Ticker unless you really, really know what you're doing. Use TickerScheduler instead.
+
+  More advanced task scheduler:   http://playground.arduino.cc/Code/TaskScheduler
+
+ ********************************************************************************/
 
 
 /********************************************************************************
@@ -85,6 +98,8 @@
       ARDUINO Board Manager URL:
         http://arduino.esp8266.com/stable/package_esp8266com_index.json
         https://github.com/esp8266/Arduino
+        http://arduino-esp8266.readthedocs.io/en/latest/
+        Core Doucmentation  https://media.readthedocs.org/pdf/arduino-esp8266/docs_to_readthedocs/arduino-esp8266.pdf
 ********************************************************************************/
 #include <ESP8266WiFi.h>
 //#include <WiFiClient.h>
@@ -179,16 +194,16 @@ NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount);  //default on ES
 
 //--------------------------------------------
 //  LED Definitions
-const int LED_GREEN = 14;  //  D5/GPIO14
-const int LED_RED = 12;    //  D6/GPIO12
-const int LED_MODULE = 2; // Controls the onboard blue LED(Near antenna). Bootloader seems to toggle this and also toggles during programming
+const int LED_GREEN = 14;   //  D5/GPIO14
+const int LED_RED = 12;     //  D6/GPIO12
+const int LED_MODULE = 2;   // Controls the onboard blue LED(Near antenna). Bootloader seems to toggle this and also toggles during programming
 
 //--------------------------------------------
 //  Push Button
 //  select wich pin will trigger the configuration portal when set to LOW
 //  Push Button needs to be connected to this pin. It must be a momentary connection
 //  not connected permanently to ground.
-const int TRIGGER_PIN = 13; // D7/GPIO13
+const int TRIGGER_PIN = 13;   // D7/GPIO13
 
 
 //--------------------------------------------
@@ -206,8 +221,8 @@ bool SSID_Available = false;
 int i, j = 0;
 
 /* Don't set this wifi credentials. They are configurated at runtime and stored on EEPROM */
-char ssid[32] = "";
-char password[32] = "";
+char ssid[32] = "";           //no longer used. can be removed
+char password[32] = "";       //no longer used. can be removed
 char coinname[32] = "";
 char address[36] = "";
 float balance = 0.000000000;
@@ -260,18 +275,24 @@ void setup() {
 
 
   //--------------------------------------------
-  //  Configure Serial Port for debug info
+  //  Configure Serial Port for debug info. Make sure to call this before configuring neo-pixels
   Serial.begin(115200);
   Serial.println("\n Starting");
 
   //--------------------------------------------
   //  Configure NeoPixels.
-  //NOTE! Make sure to call strip.Begin() after you call Serial.Begin because Serial RX pin is also connected to Serial RX pin.
+  //NOTE! Make sure to call strip.Begin() after you call Serial.Begin because Din pin of NeoPixel is also connected to Serial RX pin and will configure the pin for usage by the DMA interface.
   strip.Begin();
   strip.Show(); // Initialize all pixels to 'off'
 
+  //--------------------------------------------
+  //print out ESP8266 info
+  Serial.println(ESP.getFreeSketchSpace());  
+  Serial.println(ESP.getCoreVersion());
+  Serial.println(ESP.getSdkVersion());
 
-
+ 
+  
   //--------------------------------------------
   //print out WiFi diagnostic info
   WiFi.printDiag(Serial); //Remove this line if you do not want to see WiFi password printed
@@ -310,7 +331,7 @@ void setup() {
     while (WiFi.status() != WL_CONNECTED) {
       delay(500);
       Serial.print(".");
-      //it will hang here forever if there is no connection
+      //it will hang here forever if there is no connection.  I wonder if there should be an occasional reset of the system in case it goes a long time without connecting to wifi.
 
       //=================================================================
       // Is configuration portal requested by push button?
@@ -385,7 +406,7 @@ void setup() {
       //#endif
 
 
-      delay(1000);     //delay here for a while to show the IP address on the OLED before advancing to the next screen
+      delay(500);     //delay here for a while to show the IP address on the OLED before advancing to the next screen
     }
 
   }
@@ -499,7 +520,7 @@ void loop() {
     //I keep getting a stack dump regardless of any of the wdt disable code below.
     ESP.wdtFeed();   //resets software and hardware watchdogs
     //  ESP.wdtDisable();      //disable software watchdog. Hardware watchdog is still going. (Maybe set to 6 seconds??)
-    delay(2);    //give RTOS some bandwidth
+    //   delay(2);    //give RTOS some bandwidth
 
     //this api seems to have a timeout of 1500m????????
     CMCTickerResponse response = api.GetTickerInfo(coinname);
@@ -563,7 +584,7 @@ void getBitcoinBalance() {
 /********************************************************************************
                               Update NeoPixels
 ********************************************************************************/
-void updateNeoPixels(CMCTickerResponse * response) {
+void updateNeoPixels(CMCTickerResponse *response) {
 
   if ((response->percent_change_24h) > 0) {
     digitalWrite(LED_GREEN, LOW); //Green active low
