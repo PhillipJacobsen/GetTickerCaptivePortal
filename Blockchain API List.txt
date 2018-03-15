@@ -1,5 +1,11 @@
 API HTTP Endpoints to get account balance for various cryptos.
 
+ARK
+
+https://node1.arknet.cloud/api
+https://node2.arknet.cloud/api
+
+
 LISK
 API:  https://lisk.io/documentation?i=lisk-docs/APIReference
 Peer Explorer: https://explorer.lisk.io/networkMonitor
