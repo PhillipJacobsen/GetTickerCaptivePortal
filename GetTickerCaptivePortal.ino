@@ -5,6 +5,8 @@
 
 ********************************************************************************/
 
+
+
 /********************************************************************************
                Electronic Hardware Requirements and Pin Connections
 
@@ -32,12 +34,12 @@
           D1/GPIO5  -> OLED SCL
           D2/GPIO4  -> OLED SDA
           D3/GPIO0  -> Do not use for now. Connected to onboard Flash Push Button. Not sure what this does(Maybe used by LUA interpreter)
-          D4/GPIO2  -> Keep low on bootup - also connected to Blue LED on WiFiModule(Near antenna)
+          D4/GPIO2  -> NodeMCU documents suggest that you keep low on bootup - also connected to Blue LED on WiFiModule(Near antenna)
           D5/GPIO14 -> Green LED
           D6/GPIO12 -> Red LED
           D7/GPIO13 -> Push Button
-          D8/GPIO15 -> Do not use for now.  Keep low on bootup.
-          D9/GPIO3  -> NeoPixel Din. Also used for USB serial Rx. I
+          D8/GPIO15 -> Do not use for now.  NodeMCU documents suggest that you keep low on bootup.
+          D9/GPIO3  -> NeoPixel Din. Also used for USB serial Rx. 
           D10/GPIO1 -> used for USB serial Tx.
 
 
@@ -52,8 +54,8 @@
 
     NeoPixels
       Note: NeoPixels should really be powered by 5V or 3.7V at a minimum.
-            When powered by 5V a 3.3V->5V level shifter should be used
-            When powered by 3.7V the 3.3V i/O from ESP8266 is ok
+            When powered by 5V a 3.3V->5V level shifter should be used. You can also use a simple 1N4001 diode(Check power handling of diode)
+            When powered by 3.7V the 3.3V i/O from ESP8266 is ok (data should be 0.7 * VDD)
 
       Din -> NodeMCU D9 pin (RDX0/GPIO3)
       VCC -> 3.3V (This is "working". should be 3.7V or 5V with level shifter on Din pin)
@@ -68,7 +70,7 @@
 
     Green External LED
       D5 pin (GPIO14)
-  EEPROM.begin(size)
+
     Red External LED
       D6 pin (GPIO12)
 
@@ -144,8 +146,14 @@
 // The complete list is available here: https://github.com/olikraus/u8g2/wiki/u8g2setupcpp
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
+
+
+//testing
+//#include <qrcode.h>
+//
 #endif
 
+//#include "qrcode.h"
 
 /********************************************************************************
     Makuna NeoPixel Library - optimized for ESP8266
@@ -539,7 +547,10 @@ void loop() {
     //=================================================================
     // update displays
     printTickerData(coinname, &response);
+
+ #ifdef OLED_DISPLAY   
     updateOLED(coinname, &response);
+ #endif   
     updateNeoPixels(&response);
 
     api_due_time = timeNow + api_mtbs;
@@ -634,10 +645,12 @@ void updateNeoPixels(CMCTickerResponse *response) {
 
 }
 
+
+#ifdef OLED_DISPLAY
 /********************************************************************************
                               Update 128x64 OLED
 ********************************************************************************/
-void updateOLED(String ticker, CMCTickerResponse * response) {
+void updateOLED(String ticker, CMCTickerResponse *response) {
   if (response->error == "") {
     //u8g2.begin();
     //loadCredentials();
@@ -660,20 +673,17 @@ void updateOLED(String ticker, CMCTickerResponse * response) {
     u8g2.setFont(u8g2_font_ncenB10_tr );  // 11 pixel height
     u8g2.setCursor(0, 30);
     u8g2.print("1hr");
-
     u8g2.setCursor(0, 45);
     u8g2.print(response->percent_change_1h);
 
-    u8g2.setCursor(47, 30);
+    u8g2.setCursor(42, 30);
     u8g2.print("24hr");
-
-    u8g2.setCursor(47, 45);
+    u8g2.setCursor(42, 45);
     u8g2.print(response->percent_change_24h);
 
     u8g2.setCursor(100, 30);
     u8g2.print("7d");
-
-    u8g2.setCursor(90, 45);
+    u8g2.setCursor(87, 45);
     u8g2.print(response->percent_change_7d);
 
 
@@ -692,7 +702,7 @@ void updateOLED(String ticker, CMCTickerResponse * response) {
 
   }
 }
-
+#endif
 
 
 /********************************************************************************
@@ -745,4 +755,30 @@ void clearStrip() {
 }
 
 
+
+
+//#define Lcd_X  128
+//#define Lcd_Y  64
+//void EncodeDataInLCDAtCenter(uint8_t version,uint8_t ecc,const char *lpsSource){
+//    _ToBeUpdatedFlag = 0;
+//    
+//    uint8_t BufferSize = qrcode_getBufferSize(version);
+//    uint8_t qrcodeData[BufferSize];
+//    qrcode_initText(&qrcode, qrcodeData, version, ecc, lpsSource);
+//    //qrcode_initText(QRCode *qrcode, uint8_t *modules, uint8_t version, uint8_t ecc, const char *data)
+//
+//    uint8_t x0 = (Lcd_X-qrcode.size)/2;
+//    uint8_t y0 = (Lcd_Y-qrcode.size)/2;
+//
+//    for (uint8_t y = 0; y < qrcode.size; y++) {
+//        for (uint8_t x = 0; x < qrcode.size; x++) {
+//            if (qrcode_getModule(&qrcode, x, y)) {
+//              u8g.setColorIndex(1);
+//            }else{
+//              u8g.setColorIndex(0);
+//            }
+//            u8g.drawPixel(x0+x,y0+y);
+//        }
+//    }
+//}
 
