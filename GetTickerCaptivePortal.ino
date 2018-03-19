@@ -39,7 +39,7 @@
           D6/GPIO12 -> Red LED
           D7/GPIO13 -> Push Button
           D8/GPIO15 -> Do not use for now.  NodeMCU documents suggest that you keep low on bootup.
-          D9/GPIO3  -> NeoPixel Din. Also used for USB serial Rx. 
+          D9/GPIO3  -> NeoPixel Din. Also used for USB serial Rx.
           D10/GPIO1 -> used for USB serial Tx.
 
 
@@ -62,7 +62,7 @@
       GND -> GND
 
     Pushbutton
-      NodeMCU D6 pin (GPIO12) (with internal pullup configured)
+      NodeMCU D7 pin (GPIO13) (with internal pullup configured)
       GND
 
     Onboard Blue LED on NodeMCU dev board (near antenna)
@@ -79,8 +79,8 @@
 /********************************************************************************
    Programming Notes.........
   Yielding
-  This is one of the most critical differences between the ESP8266 and a more classical Arduino microcontroller. The ESP8266 runs a lot of utility functions in the background – keeping WiFi connected, managing the TCP/IP stack, and performing other duties. Blocking these functions from running can cause the ESP8266 to crash and reset itself. To avoid these mysterious resets, avoid long, blocking loops in your sketch.
-  If you have a long loop in your sketch, you can add a delay([milliseconds]) call within, to allow the critical background functions to execute. The ESP8266’s delay() funciton, while of course delaying for a set number of milliseconds, also makes a quick call to the background functions.
+  This is one of the most critical differences between the ESP8266 and a more classical Arduino microcontroller. The ESP8266 runs a lot of utility functions in the background â€“ keeping WiFi connected, managing the TCP/IP stack, and performing other duties. Blocking these functions from running can cause the ESP8266 to crash and reset itself. To avoid these mysterious resets, avoid long, blocking loops in your sketch.
+  If you have a long loop in your sketch, you can add a delay([milliseconds]) call within, to allow the critical background functions to execute. The ESP8266â€™s delay() funciton, while of course delaying for a set number of milliseconds, also makes a quick call to the background functions.
   The amazing creators of the ESP8266 Arduino libraries also implemented a yield() function, which calls on the background functions to allow them to do their thing. As an example, if your sketch is waiting for someone to press a button attached to pin 12, creating a loop like this will keep the ESP8266 from crashing:
   Delay calls yield until such time as the delay has expired and then returns to the delay() calling function.
 
@@ -146,14 +146,7 @@
 // The complete list is available here: https://github.com/olikraus/u8g2/wiki/u8g2setupcpp
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
-
-
-//testing
-//#include <qrcode.h>
-//
 #endif
-
-//#include "qrcode.h"
 
 /********************************************************************************
     Makuna NeoPixel Library - optimized for ESP8266
@@ -184,6 +177,15 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
    Install From Library Manager
 ********************************************************************************/
 #include <CoinMarketCapApi.h>
+
+
+/********************************************************************************
+    TaskScheduler
+   Install From Library Manager
+   https://github.com/arkhipenko/TaskScheduler
+********************************************************************************/
+#include <TaskScheduler.h>
+
 
 /********************************************************************************
     Various other libraries
@@ -274,6 +276,7 @@ void setup() {
 #ifdef OLED_DISPLAY
   u8g2.begin();
   u8g2.clearBuffer();          // clear the internal memory
+  u8g2.setContrast(2);    // set OELD brightness(0->255)
 
   //u8g2.setFont(u8g2_font_ncenB08_tr);  // 8 pixel height
   u8g2.setFont(u8g2_font_ncenB12_tr );  // 12 pixel height
@@ -295,12 +298,12 @@ void setup() {
 
   //--------------------------------------------
   //print out ESP8266 info
-  Serial.println(ESP.getFreeSketchSpace());  
+  Serial.println(ESP.getFreeSketchSpace());
   Serial.println(ESP.getCoreVersion());
   Serial.println(ESP.getSdkVersion());
 
- 
-  
+
+
   //--------------------------------------------
   //print out WiFi diagnostic info
   WiFi.printDiag(Serial); //Remove this line if you do not want to see WiFi password printed
@@ -414,7 +417,7 @@ void setup() {
       //#endif
 
 
-      delay(500);     //delay here for a while to show the IP address on the OLED before advancing to the next screen
+      delay(700);     //delay here for a while to show the IP address on the OLED before advancing to the next screen
     }
 
   }
@@ -446,6 +449,29 @@ void loop() {
     //and goes into a blocking loop awaiting configuration
     if (!wifiManager.startConfigPortal()) {
       Serial.println("Not connected to WiFi but continuing anyway.");
+  //ways to get here are:
+  //  1. Timeout expired. requires wifiManager.setConfigPortalTimeout() to be set previously.
+  //  2. user entered ssid and password were received however connection to new Access Point failed
+
+
+  //features in new development branch of wifimanager. 
+  //  wifiManageranager.configPortalHasTimeout()  I think this checks to see if there was a timeout 
+  // 
+  //look at  process() 
+  //and setConfigPortalBlocking()
+  // if blocking enabled, then the configportal will enter a blocking loop and wait for configuration
+ //   if disabled then use with process() to manually process webserver
+// process() returns true when state = WL_CONNECTED.
+
+//steps:
+//1. setConfigPortalBlocking(true);
+//2. wifiManager.startConfigPortal(); //returns false after setting up captive portal
+//3. poll process()
+ 
+
+      
+
+      
     } else {
       //if you get here you have connected to the WiFi
       Serial.println("Connected to new access point... :)");
@@ -548,9 +574,9 @@ void loop() {
     // update displays
     printTickerData(coinname, &response);
 
- #ifdef OLED_DISPLAY   
+#ifdef OLED_DISPLAY
     updateOLED(coinname, &response);
- #endif   
+#endif
     updateNeoPixels(&response);
 
     api_due_time = timeNow + api_mtbs;
@@ -761,7 +787,7 @@ void clearStrip() {
 //#define Lcd_Y  64
 //void EncodeDataInLCDAtCenter(uint8_t version,uint8_t ecc,const char *lpsSource){
 //    _ToBeUpdatedFlag = 0;
-//    
+//
 //    uint8_t BufferSize = qrcode_getBufferSize(version);
 //    uint8_t qrcodeData[BufferSize];
 //    qrcode_initText(&qrcode, qrcodeData, version, ecc, lpsSource);
@@ -781,4 +807,5 @@ void clearStrip() {
 //        }
 //    }
 //}
+
 
