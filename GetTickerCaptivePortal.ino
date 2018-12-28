@@ -189,6 +189,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
     Various other libraries
       Install From Library Manager
 ********************************************************************************/
+// requires arduinojason version 5.13.2 to work.  
+//https://github.com/bblanchon/ArduinoJson/issues/756
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 
@@ -781,4 +783,3 @@ void clearStrip() {
 //        }
 //    }
 //}
-
